@@ -33,6 +33,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 200
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,7 +103,57 @@ jobs:
             mv "$HOME/.docker/config.json.tmp" "$HOME/.docker/config.json"
           echo "Registry: $REGISTRY_HOST (credentials configured for both internal and external)"
 
+      - name: Check for existing Job
+        id: check-job
+        run: |
+          set -euo pipefail
+          NS="openshift-pipelines"
+          # Find most recent midstreamer Job
+          JOB_NAME=$(oc get jobs -n "$NS" -l app=ocp-midstreamer \
+            --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)
+
+          if [ -z "$JOB_NAME" ]; then
+            echo "status=none" >> "$GITHUB_OUTPUT"
+            echo "No existing midstreamer Jobs found."
+            exit 0
+          fi
+
+          # Check Job status
+          SUCCEEDED=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "0")
+          FAILED=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.failed}' 2>/dev/null || echo "0")
+          ACTIVE=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.active}' 2>/dev/null || echo "0")
+
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+
+          if [ "$ACTIVE" = "1" ]; then
+            echo "status=running" >> "$GITHUB_OUTPUT"
+            echo "Job $JOB_NAME is still running."
+          elif [ "$SUCCEEDED" = "1" ]; then
+            echo "status=succeeded" >> "$GITHUB_OUTPUT"
+            echo "Job $JOB_NAME has completed successfully."
+          elif [ "$FAILED" = "1" ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "Job $JOB_NAME has failed."
+          else
+            echo "status=none" >> "$GITHUB_OUTPUT"
+            echo "Job $JOB_NAME in unknown state, treating as none."
+          fi
+
+      - name: Copy results from completed Job
+        if: steps.check-job.outputs.status == 'succeeded'
+        run: |
+          set -euo pipefail
+          NS="openshift-pipelines"
+          JOB_NAME="${{ steps.check-job.outputs.job_name }}"
+          POD_NAME=$(oc get pods -n "$NS" -l "job-name=$JOB_NAME" -o jsonpath='{.items[0].metadata.name}')
+          echo "Copying results from pod $POD_NAME..."
+          mkdir -p ./test-output
+          oc cp "$NS/$POD_NAME:/test-output" ./test-output/ 2>/dev/null || true
+          echo "Results copied. Contents:"
+          find ./test-output -type f | head -20
+
       - name: Run midstreamer
+        if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
         run: |
           set -euo pipefail
           ./target/release/ocp-midstreamer run \
@@ -110,7 +161,45 @@ jobs:
             --release-tests-ref "${{ inputs.release_tests_ref }}" \
             ${{ inputs.cli_flags }}
 
+      - name: Write summary (Job running)
+        if: steps.check-job.outputs.status == 'running'
+        run: |
+          JOB_NAME="${{ steps.check-job.outputs.job_name }}"
+          echo "## ⏳ Midstreamer Job In Progress" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Job:** \`$JOB_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Namespace:** \`openshift-pipelines\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### View Logs" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "oc logs -f job/$JOB_NAME -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run this workflow after the Job completes to copy results and publish the dashboard." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write summary (Job just launched)
+        if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
+        run: |
+          echo "## 🚀 Midstreamer Job Launched" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### View Logs" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "ocp-midstreamer logs" >> "$GITHUB_STEP_SUMMARY"
+          echo "# or" >> "$GITHUB_STEP_SUMMARY"
+          echo "oc logs -f \$(oc get pods -n openshift-pipelines -l app=ocp-midstreamer --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run this workflow after the Job completes (~2.5 hrs) to copy results and publish the dashboard." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Configure git for publish
+        if: steps.check-job.outputs.status == 'succeeded'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -119,16 +208,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to dashboard
+        if: steps.check-job.outputs.status == 'succeeded'
         run: |
           set -euo pipefail
           ./target/release/ocp-midstreamer publish \
             --label "CI run: ${{ inputs.components }}"
 
-      - name: Write summary
-        if: always()
+      - name: Write summary (results published)
+        if: steps.check-job.outputs.status == 'succeeded'
         run: |
           PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
-          echo "## Midstreamer Run Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ✅ Midstreamer Results Published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
