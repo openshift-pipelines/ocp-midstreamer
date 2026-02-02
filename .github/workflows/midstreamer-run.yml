@@ -92,8 +92,12 @@ jobs:
         run: |
           set -euo pipefail
           REGISTRY_HOST=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
+          TOKEN=$(oc whoami -t)
           oc registry login --to="$HOME/.docker/config.json"
-          echo "Registry: $REGISTRY_HOST"
+          echo "{\"auths\":{\"$REGISTRY_HOST\":{\"auth\":\"$(echo -n "unused:$TOKEN" | base64)\"}}}" | \
+            jq -s '.[0] * .[1]' "$HOME/.docker/config.json" - > "$HOME/.docker/config.json.tmp" && \
+            mv "$HOME/.docker/config.json.tmp" "$HOME/.docker/config.json"
+          echo "Registry: $REGISTRY_HOST (credentials configured for both internal and external)"
 
       - name: Run midstreamer
         run: |
