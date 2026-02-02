@@ -88,8 +88,24 @@ jobs:
           echo "Logged in as: $(oc whoami)"
           echo "Server: $(oc whoami --show-server)"
 
-      - name: Auto-setup cluster prerequisites
-        run: ./target/release/ocp-midstreamer check
+      - name: Ensure registry route exists
+        run: |
+          set -euo pipefail
+          if ! oc get route default-route -n openshift-image-registry -o name 2>/dev/null; then
+            echo "Registry route missing — enabling defaultRoute..."
+            oc patch configs.imageregistry.operator.openshift.io/cluster \
+              --patch '{"spec":{"defaultRoute":true}}' --type=merge
+            echo "Waiting for route to appear..."
+            for i in $(seq 1 15); do
+              if oc get route default-route -n openshift-image-registry -o name 2>/dev/null; then
+                echo "Registry route is ready."
+                break
+              fi
+              sleep 2
+            done
+          else
+            echo "Registry route already exists."
+          fi
 
       - name: Login to OCP registry
         run: |
