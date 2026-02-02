@@ -58,10 +58,10 @@ jobs:
         uses: ko-build/setup-ko@v0.9
 
       - name: Install Gauge
-        uses: getgauge/setup-gauge@v1
-
-      - name: Install Gauge plugins
-        run: gauge install go && gauge install xml-report
+        run: |
+          curl -SsL https://downloads.gauge.org/stable | sh
+          gauge install go
+          gauge install xml-report
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           oc login "${{ inputs.cluster_api_url }}" \
-            -u kubeadmin \
+            -u cluster-admin \
             -p "$CLUSTER_PASSWORD" \
             --insecure-skip-tls-verify
           echo "Logged in as: $(oc whoami)"
