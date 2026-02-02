@@ -1,0 +1,58 @@
+[pipeline]
+repo = "https://github.com/tektoncd/pipeline.git"
+import_paths = ["./cmd/controller", "./cmd/entrypoint", "./cmd/nop", "./cmd/webhook", "./cmd/workingdirinit", "./cmd/resolvers"]
+
+[pipeline.images]
+controller = "IMAGE_PIPELINES_TEKTON_PIPELINES_CONTROLLER"
+webhook = "IMAGE_PIPELINES_WEBHOOK"
+entrypoint = "IMAGE_PIPELINES_ARG__ENTRYPOINT_IMAGE"
+nop = "IMAGE_PIPELINES_ARG__NOP_IMAGE"
+workingdirinit = "IMAGE_PIPELINES_ARG__WORKINGDIRINIT_IMAGE"
+
+[triggers]
+repo = "https://github.com/tektoncd/triggers.git"
+import_paths = ["./cmd/controller", "./cmd/interceptors", "./cmd/webhook"]
+installer_set_prefix = "trigger"
+
+[triggers.images]
+controller = "IMAGE_TRIGGERS_TEKTON_TRIGGERS_CONTROLLER"
+interceptors = "IMAGE_TRIGGERS_TEKTON_TRIGGERS_CORE_INTERCEPTORS"
+webhook = "IMAGE_TRIGGERS_WEBHOOK"
+
+[chains]
+repo = "https://github.com/tektoncd/chains.git"
+import_paths = ["./cmd/controller"]
+installer_set_prefix = "chain"
+
+[chains.images]
+controller = "IMAGE_CHAINS_TEKTON_CHAINS_CONTROLLER"
+
+[results]
+repo = "https://github.com/tektoncd/results.git"
+import_paths = ["./cmd/api", "./cmd/watcher", "./cmd/retention-policy-agent"]
+installer_set_prefix = "result"
+
+[results.images]
+api = "IMAGE_RESULTS_API"
+watcher = "IMAGE_RESULTS_WATCHER"
+retention-policy-agent = "IMAGE_RESULTS_RETENTION_POLICY_AGENT"
+
+[manual-approval-gate]
+repo = "https://github.com/openshift-pipelines/manual-approval-gate.git"
+import_paths = ["./cmd/controller", "./cmd/webhook"]
+installer_set_prefix = "manualapprovalgate"
+
+[manual-approval-gate.images]
+controller = "IMAGE_MAG_MANUAL_APPROVAL"
+webhook = "IMAGE_MAG_TEKTON_TASKGROUP_CONTROLLER"
+
+[console-plugin]
+repo = "https://github.com/openshift-pipelines/console-plugin.git"
+build_system = "docker"
+import_paths = []
+# Console plugin is managed via pipeline InstallerSets (tekton-config-console-plugin-manifests)
+# The IMAGE_ env var uses PIPELINES prefix, not a separate CONSOLE prefix
+installer_set_prefix = "tekton-config-console-plugin-manifests"
+
+[console-plugin.images]
+console-plugin = "IMAGE_PIPELINES_CONSOLE_PLUGIN"

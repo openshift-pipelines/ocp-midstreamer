@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCP Midstreamer Test Dashboard</title>
+  <link rel="stylesheet" href="css/dashboard.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>OCP Midstreamer Test Dashboard</h1>
+  </header>
+
+  <div id="filters">
+    <select id="filter-category">
+      <option value="">All Categories</option>
+      <option value="MissingComponent">MissingComponent</option>
+      <option value="UpgradePrereq">UpgradePrereq</option>
+      <option value="UpstreamRegression">UpstreamRegression</option>
+      <option value="PlatformIssue">PlatformIssue</option>
+      <option value="ConfigGap">ConfigGap</option>
+    </select>
+    <select id="filter-status">
+      <option value="">All Statuses</option>
+      <option value="passed">Passed</option>
+      <option value="failed">Failed</option>
+    </select>
+    <input type="text" id="filter-component" placeholder="Component...">
+    <input type="date" id="filter-date-from" placeholder="From">
+    <input type="date" id="filter-date-to" placeholder="To">
+    <input type="text" id="filter-search" placeholder="Search tests...">
+  </div>
+
+  <div id="trend-charts"></div>
+
+  <div id="compare-controls">
+    <select id="compare-run-a"><option value="">Run A</option></select>
+    <select id="compare-run-b"><option value="">Run B</option></select>
+    <button id="btn-compare">Compare</button>
+    <div id="compare-view"></div>
+  </div>
+
+  <div id="run-tables"></div>
+
+  <div id="detail-panel" class="hidden"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

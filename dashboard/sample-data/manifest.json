@@ -1,0 +1,14 @@
+{
+  "runs": [
+    {
+      "id": "run-20260201100000",
+      "date": "2026-02-01T10:00:00Z",
+      "timestamp": "2026-02-01T10:00:00Z",
+      "label": "pipeline upstream test",
+      "total": 61,
+      "passed": 44,
+      "failed": 17,
+      "file": "run-sample-1.json"
+    }
+  ]
+}

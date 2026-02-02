@@ -1,0 +1,62 @@
+# Multi-stage build for ocp-midstreamer CLI container image.
+# Runtime image includes full toolchain: oc, ko, go, git, gauge, opc, tar.
+
+# --- Build stage ---
+FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
+
+RUN dnf install -y gcc make openssl-devel && dnf clean all
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src/ src/
+COPY components.toml ./
+
+RUN cargo build --release
+
+# --- Runtime stage ---
+FROM registry.access.redhat.com/ubi9/ubi:latest
+
+RUN dnf install -y \
+    git \
+    tar \
+    gzip \
+    wget \
+    unzip \
+    && dnf clean all
+
+# Install oc CLI
+RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
+    && tar xzf openshift-client-linux.tar.gz -C /usr/local/bin oc kubectl \
+    && rm -f openshift-client-linux.tar.gz
+
+# Install Go
+RUN wget -q https://go.dev/dl/go1.22.5.linux-amd64.tar.gz \
+    && tar xzf go1.22.5.linux-amd64.tar.gz -C /usr/local \
+    && rm -f go1.22.5.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+
+# Install ko
+RUN go install github.com/google/ko@latest
+
+# Install gauge
+RUN wget -q https://github.com/getgauge/gauge/releases/download/v1.6.3/gauge-1.6.3-linux.x86_64.zip \
+    && unzip -q gauge-1.6.3-linux.x86_64.zip -d /usr/local/bin \
+    && rm -f gauge-1.6.3-linux.x86_64.zip
+
+# Install opc (OpenShift Pipelines CLI)
+RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/pipelines/latest/tkn-linux-amd64.tar.gz \
+    && tar xzf tkn-linux-amd64.tar.gz -C /usr/local/bin opc 2>/dev/null || true \
+    && tar xzf tkn-linux-amd64.tar.gz -C /usr/local/bin tkn 2>/dev/null || true \
+    && rm -f tkn-linux-amd64.tar.gz
+
+# Copy CLI binary from build stage
+COPY --from=builder /build/target/release/ocp-midstreamer /usr/local/bin/ocp-midstreamer
+COPY components.toml /etc/ocp-midstreamer/components.toml
+
+ENV OCP_MIDSTREAMER_INCLUSTER=1
+
+ENTRYPOINT ["ocp-midstreamer"]

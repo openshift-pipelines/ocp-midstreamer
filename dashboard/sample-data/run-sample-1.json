@@ -1,0 +1,479 @@
+{
+  "total": 61,
+  "passed": 44,
+  "failed": 17,
+  "errors": 0,
+  "duration_secs": 9487.532,
+  "tests": [
+    {
+      "spec": "Tekton Chains tests",
+      "scenario": "Using Tekton Chains to create and verify task run signatures: PIPELINES-27-TC01",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "[assertion failed:\nCommand:  opc version -s\nExitCode: 1\nError:    exit status 1\nStdout:\nStderr:   Error: unknown shorthand flag: 's' in -s"
+    },
+    {
+      "spec": "Tekton Chains tests",
+      "scenario": "Using Tekton Chains to sign and verify image and provenance : PIPELINES-27-TC02",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "'CHAINS_REPOSITORY' environment variable is not exported"
+    },
+    {
+      "spec": "Verify ecosystem E2E spec",
+      "scenario": "kn-apply pipelinerun: PIPELINES-32-TC03",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run kn-apply-run to finish\n\"kn-apply-run\" failed\npipelinerun logs:\ntask run-kn-apply has failed: \"step-kn\" exited with code 1: Error\n[run-kn-apply : kn] Error: services.serving.knative.dev \"hello-apply\" is forbidden: User \"system:serviceaccount:releasetest-wcf7q:pipeline\" cannot get resource \"services\" in API group \"serving.knative.dev\" in the namespace \"releasetest-wcf7q\"\n[run-kn-apply : kn] Run 'kn --help' for usage"
+    },
+    {
+      "spec": "Verify ecosystem E2E spec",
+      "scenario": "kn-apply p&z pipelinerun: PIPELINES-32-TC04",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run kn-apply-pz-run to finish\n\"kn-apply-pz-run\" failed\npipelinerun logs:\ntask run-kn-apply has failed: \"step-kn\" exited with code 1: Error\n[run-kn-apply : kn] Error: services.serving.knative.dev \"hello-apply\" is forbidden: User \"system:serviceaccount:releasetest-k6g8d:pipeline\" cannot get resource \"services\" in API group \"serving.knative.dev\" in the namespace \"releasetest-k6g8d\"\n[run-kn-apply : kn] Run 'kn --help' for usage"
+    },
+    {
+      "spec": "Verify ecosystem E2E spec",
+      "scenario": "kn pipelinerun: PIPELINES-32-TC05",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run kn-run to finish\n\"kn-run\" failed\npipelinerun logs:\ntask run-kn has failed: \"step-kn\" exited with code 1: Error\n[run-kn : kn] Error: services.serving.knative.dev \"hello\" is forbidden: User \"system:serviceaccount:releasetest-8b6tm:pipeline\" cannot get resource \"services\" in API group \"serving.knative.dev\" in the namespace \"releasetest-8b6tm\"\n[run-kn : kn] Run 'kn --help' for usage"
+    },
+    {
+      "spec": "Verify ecosystem E2E spec",
+      "scenario": "kn p&z pipelinerun: PIPELINES-32-TC06",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run kn-pz-run to finish\n\"kn-pz-run\" failed\npipelinerun logs:\ntask run-kn has failed: \"step-kn\" exited with code 1: Error\n[run-kn : kn] Error: services.serving.knative.dev \"hello\" is forbidden: User \"system:serviceaccount:releasetest-j6nrr:pipeline\" cannot get resource \"services\" in API group \"serving.knative.dev\" in the namespace \"releasetest-j6nrr\"\n[run-kn : kn] Run 'kn --help' for usage"
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I nodejs pipelinerun: PIPELINES-33-TC01",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run nodejs-ex-git-pr to finish\n\"nodejs-ex-git-pr\" failed\npipelinerun logs:\n[User error] Failed to apply parameters to Pipeline releasetest-dbsbh/nodejs-ex-git: parameter resolution failed: param \"params['IMAGE_NAME']\" references undefined param \"context.pipelineRun.namespace\""
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I dotnet pipelinerun: PIPELINES-33-TC02",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I golang pipelinerun: PIPELINES-33-TC03",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I nodejs pipelinerun: PIPELINES-33-TC05",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I perl pipelinerun: PIPELINES-33-TC06",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I php pipelinerun: PIPELINES-33-TC07",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I python pipelinerun: PIPELINES-33-TC08",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem E2E spec",
+      "scenario": "S2I ruby pipelinerun: PIPELINES-33-TC09",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "buildah pipelinerun: PIPELINES-29-TC01",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "buildah-ns pipelinerun: PIPELINES-29-TC20",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run buildah-ns-run to finish\n\"buildah-ns-run\" failed\npipelinerun logs:\n[clone-git-repo : prepare-and-run] Running Script /scripts/prepare.sh\n[clone-git-repo : prepare-and-run] ---> Phase: Preparing the filesystem before cloning the repository...\n[clone-git-repo : prepare-and-run] ---> Phase: Deleting all contents of checkout-dir '/workspace/output/buildah'...\n[clone-git-repo : prepare-and-run] Running Script /scripts/git-run.sh\n[clone-git-repo : prepare-and-run] ---> Phase: Setting output workspace as safe directory ('/workspace/output')...\n[clone-git-repo : prepare-and-run] ---> Phase: Setting up HTTP_PROXY=''...\n[clone-git-repo : prepare-and-run] ---> Phase: Settting up HTTPS_PROXY=''...\n[clone-git-repo : prepare-and-run] ---> Phase: Setting up NO_PROXY=''...\n[clone-git-repo : prepare-and-run] ---> Phase: Cloning 'https://github.com/ppitonak/nocode' into '/workspace/output/buildah'...\n[clone-git-repo : prepare-and-run] + exec git-init -url=https://github.com/ppitonak/nocode -revision=fedora-38 -refspec= -path=/workspace/output/buildah -sslVerify=true -submodules=true -depth=1 -sparseCheckoutDirectories=\n[clone-git-repo : prepare-and-run] {\"level\":\"info\",\"ts\":1769816788.1127656,\"caller\":\"git/git.go:384\",\"msg\":\"Retrying operation (attempt 1)\"}\n[clone-git-repo : prepare-and-run] {\"level\":\"info\",\"ts\":1769816788.7085896,\"caller\":\"git/git.go:218\",\"msg\":\"Successfully cloned https://github.com/ppitonak/nocode @ 793f976abee9442c9d12fbd9075ba6acf4c30185 (grafted, HEAD, origin/fedora-38) in path /workspace/output/buildah\"}\n[clone-git-repo : prepare-and-run] {\"level\":\"info\",\"ts\":1769816788.708878,\"caller\":\"git/git.go:384\",\"msg\":\"Retrying operation (attempt 1)\"}\n[clone-git-repo : prepare-and-run] {\"level\":\"info\",\"ts\":1769816789.2063754,\"caller\":\"git/git.go:267\",\"msg\":\"Successfully initialized and updated submodules in path /workspace/output/buildah\"}\n[clone-git-repo : prepare-and-run] Running Script /scripts/report.sh\n[clone-git-repo : prepare-and-run] ---> Phase: Collecting cloned repository information ('/workspace/output/buildah')...\n[clone-git-repo : prepare-and-run] ---> Phase: Setting output workspace as safe directory ('/workspace/output')...\n[clone-git-repo : prepare-and-run] ---> Phase: Reporting last commit date '1676284081'...\n[clone-git-repo : prepare-and-run] ---> Phase: Reporting parsed revision SHA '793f976abee9442c9d12fbd9075ba6acf4c30185'...\n[clone-git-repo : prepare-and-run] ---> Phase: Reporting repository URL 'https://github.com/ppitonak/nocode'..."
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "git-cli pipelinerun: PIPELINES-29-TC03",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "git-cli read private repo pipelinerun: PIPELINES-29-TC04",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "git-cli read private repo using different service account pipelinerun: PIPELINES-29-TC05",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "git-clone read private repo taskrun PIPELINES-29-TC06",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "git-clone read private repo using different service account taskrun PIPELINES-29-TC07",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "openshift-client pipelinerun: PIPELINES-29-TC08",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "skopeo-copy pipelinerun: PIPELINES-29-TC09",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "tkn pipelinerun: PIPELINES-29-TC10",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "tkn pac pipelinerun: PIPELINES-29-TC11",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "tkn version pipelinerun: PIPELINES-29-TC12",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "maven pipelinerun: PIPELINES-29-TC13",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "Test the functionality of step action resolvers: PIPELINES-29-TC14",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "Test the functionality of cache-upload stepaction : PIPELINES-29-TC15",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run caches-python-pipeline-run-bg4h2 to finish\n\"caches-python-pipeline-run-bg4h2\" failed\npipelinerun logs:\n[User error] Failed to apply parameters to Pipeline releasetest-v8pvz/caches-python-pipeline: parameter resolution failed: param \"params['registry']\" references undefined param \"context.pipelineRun.namespace\""
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "Validate cache uploads with change in revision : PIPELINES-29-TC16",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "error waiting for pipeline run caches-python-pipeline-run-b9c68 to finish\n\"caches-python-pipeline-run-b9c68\" failed\npipelinerun logs:\n[User error] Failed to apply parameters to Pipeline releasetest-8hvpc/caches-python-pipeline: parameter resolution failed: param \"params[\\\"registry\\\"]\" references undefined param \"context.pipelineRun.namespace\""
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "helm-upgrade-from-repo pipelinerun: PIPELINES-29-TC17",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "helm-upgrade-from-source pipelinerun: PIPELINES-29-TC18",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "pull-request pipelinerun: PIPELINES-29-TC19",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "secret github-auth-secret doesn't exist in namespace openshift-pipelines"
+    },
+    {
+      "spec": "Verify Ecosystem Tasks E2E spec",
+      "scenario": "opc task pipelinerun: PIPELINES-29-TC21",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "ManualApprovalGate Pipelines operator specs",
+      "scenario": "Approve Manual Approval gate pipeline: PIPELINES-28-TC01",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "manual approval gate doesn't exists\ncontext deadline exceeded"
+    },
+    {
+      "spec": "ManualApprovalGate Pipelines operator specs",
+      "scenario": "Reject Manual Approval gate pipeline: PIPELINES-28-TC02",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "Error while listing approval gate tasks: the server could not find the requested resource (get approvaltasks.openshift-pipelines.org)"
+    },
+    {
+      "spec": "Verify openshift pipelines monitoring",
+      "scenario": "Openshift pipelines metrics acceptance tests: PIPELINES-01-TC01",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Disable/Enable resolverTasks: PIPELINES-15-TC06",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Disable/Enable resolverTasks with additional Tasks: PIPELINES-15-TC07",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Disable/Enable pipeline templates: PIPELINES-15-TC08",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Enable pipeline templates when clustertask is disabled: PIPELINES-15-TC05",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Verify versioned ecosystem tasks: PIPELINES-15-TC09",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "Task buildah-5-0-0 not found in namespace openshift-pipelines\nTask git-cli-5-0-0 not found in namespace openshift-pipelines\nTask git-clone-5-0-0 not found in namespace openshift-pipelines\nTask maven-5-0-0 not found in namespace openshift-pipelines\nTask openshift-client-5-0-0 not found in namespace openshift-pipelines\nTask s2i-dotnet-5-0-0 not found in namespace openshift-pipelines\nTask s2i-go-5-0-0 not found in namespace openshift-pipelines\nTask s2i-java-5-0-0 not found in namespace openshift-pipelines\nTask s2i-nodejs-5-0-0 not found in namespace openshift-pipelines\nTask s2i-perl-5-0-0 not found in namespace openshift-pipelines\nTask s2i-php-5-0-0 not found in namespace openshift-pipelines\nTask s2i-python-5-0-0 not found in namespace openshift-pipelines\nTask s2i-ruby-5-0-0 not found in namespace openshift-pipelines\nTask skopeo-copy-5-0-0 not found in namespace openshift-pipelines\nTask tkn-5-0-0 not found in namespace openshift-pipelines\nTask kn-5-0-0 not found in namespace openshift-pipelines\nTask kn-apply-5-0-0 not found in namespace openshift-pipelines"
+    },
+    {
+      "spec": "Verify Addon E2E spec",
+      "scenario": "Verify versioned stepaction tasks: PIPELINES-15-TC010",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "Step action git-clone-5-0-0 not found in namespace openshift-pipelines\nStep action cache-fetch-5-0-0 not found in namespace openshift-pipelines\nStep action cache-upload-5-0-0 not found in namespace openshift-pipelines"
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune for taskrun: PIPELINES-12-TC01",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune for pipelinerun: PIPELINES-12-TC02",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune for pipelinerun and taskrun: PIPELINES-12-TC03",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune with keep-since: PIPELINES-12-TC04",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune skip namespace with annotation: PIPELINES-12-TC05",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune add resources taskrun per namespace with annotation: PIPELINES-12-TC06",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune add resources taskrun and pipelinerun per namespace with annotation: PIPELINES-12-TC07",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune add keep per namespace with annotation with global strategy keep: PIPELINES-12-TC08",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune with keep-since per namespace with global stratergy keep-since: PIPELINES-12-TC09",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune with keep per namespace with global stratergy keep-since: PIPELINES-12-TC10",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune shcedule per namespace: PIPELINES-12-TC11",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune validation: PIPELINES-12-TC12",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune cronjob re-creation for addition of random annotation/label to namespace: PIPELINES-12-TC13",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify auto prune cronjob contains single container: PIPELINES-12-TC14",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Verify auto-prune E2E",
+      "scenario": "Verify that the operator is up and running after deleting namespace with pruner annotation: PIPELINES-12-TC15",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    },
+    {
+      "spec": "Olm Openshift Pipelines operator post upgrade tests",
+      "scenario": "Verify Event listener with TLS after upgrade: PIPELINES-19-TC03",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "[assertion failed:\nCommand:  oc -n releasetest-upgrade-tls get route --selector=eventlistener=listener-embed-binding -o jsonpath='{.items[].spec.tls.certificate}'\nExitCode: 1\nError:    exit status 1\nStdout:\nStderr:   error: error executing jsonpath \"'{.items[].spec.tls.certificate}'\": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:\ntemplate was:\n'{.items[].spec.tls.certificate}'\nobject given to jsonpath engine was:\nmap[string]interface {}{\"apiVersion\":\"v1\", \"items\":[]interface {}{}, \"kind\":\"List\", \"metadata\":map[string]interface {}{\"resourceVersion\":\"\"}}"
+    },
+    {
+      "spec": "Olm Openshift Pipelines operator post upgrade tests",
+      "scenario": "Verify secret is linked to SA even after upgrade: PIPELINES-19-TC04",
+      "passed": false,
+      "duration_secs": 0.0,
+      "error_message": "failed to get SA pipeline in namespace releasetest-upgrade-pipelines for tests: context deadline exceeded"
+    },
+    {
+      "spec": "Olm Openshift Pipelines operator post upgrade tests",
+      "scenario": "Verify S2I golang pipeline after upgrade: PIPELINES-19-TC05",
+      "passed": true,
+      "duration_secs": 0.0,
+      "error_message": null
+    }
+  ],
+  "categories": [
+    {
+      "category": "UpstreamRegression",
+      "count": 8,
+      "tests": [
+        "Tekton Chains tests::Using Tekton Chains to create and verify task run signatures: PIPELINES-27-TC01",
+        "Verify Ecosystem E2E spec::S2I nodejs pipelinerun: PIPELINES-33-TC01",
+        "Verify Ecosystem Tasks E2E spec::buildah-ns pipelinerun: PIPELINES-29-TC20",
+        "Verify Ecosystem Tasks E2E spec::Test the functionality of cache-upload stepaction : PIPELINES-29-TC15",
+        "Verify Ecosystem Tasks E2E spec::Validate cache uploads with change in revision : PIPELINES-29-TC16",
+        "ManualApprovalGate Pipelines operator specs::Approve Manual Approval gate pipeline: PIPELINES-28-TC01",
+        "Verify Addon E2E spec::Verify versioned stepaction tasks: PIPELINES-15-TC010",
+        "Olm Openshift Pipelines operator post upgrade tests::Verify Event listener with TLS after upgrade: PIPELINES-19-TC03"
+      ]
+    },
+    {
+      "category": "MissingComponent",
+      "count": 7,
+      "tests": [
+        "Tekton Chains tests::Using Tekton Chains to sign and verify image and provenance : PIPELINES-27-TC02",
+        "Verify ecosystem E2E spec::kn-apply pipelinerun: PIPELINES-32-TC03",
+        "Verify ecosystem E2E spec::kn-apply p&z pipelinerun: PIPELINES-32-TC04",
+        "Verify ecosystem E2E spec::kn pipelinerun: PIPELINES-32-TC05",
+        "Verify ecosystem E2E spec::kn p&z pipelinerun: PIPELINES-32-TC06",
+        "ManualApprovalGate Pipelines operator specs::Reject Manual Approval gate pipeline: PIPELINES-28-TC02",
+        "Verify Addon E2E spec::Verify versioned ecosystem tasks: PIPELINES-15-TC09"
+      ]
+    },
+    {
+      "category": "UpgradePrereq",
+      "count": 1,
+      "tests": [
+        "Olm Openshift Pipelines operator post upgrade tests::Verify secret is linked to SA even after upgrade: PIPELINES-19-TC04"
+      ]
+    },
+    {
+      "category": "ConfigGap",
+      "count": 1,
+      "tests": [
+        "Verify Ecosystem Tasks E2E spec::pull-request pipelinerun: PIPELINES-29-TC19"
+      ]
+    }
+  ]
+}

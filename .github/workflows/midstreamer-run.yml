@@ -1,0 +1,122 @@
+name: Midstreamer Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_api_url:
+        description: 'OCP cluster API URL (e.g. https://api.cluster.example.com:6443)'
+        required: true
+        type: string
+      cluster_password:
+        description: 'kubeadmin password'
+        required: true
+        type: string
+      components:
+        description: 'Components to test (e.g. pipeline, pipeline:v0.60.0,triggers)'
+        required: false
+        default: 'pipeline'
+        type: string
+      release_tests_ref:
+        description: 'release-tests git ref'
+        required: false
+        default: 'master'
+        type: string
+      cli_flags:
+        description: 'Extra CLI flags (e.g. --dry-run, --profile)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Mask credentials
+        run: |
+          CLUSTER_PASSWORD=$(jq -r '.inputs.cluster_password' "$GITHUB_EVENT_PATH")
+          echo "::add-mask::$CLUSTER_PASSWORD"
+          echo "CLUSTER_PASSWORD=$CLUSTER_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install oc
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          source: mirror
+          oc: '4'
+
+      - name: Install ko
+        uses: ko-build/setup-ko@v0.9
+
+      - name: Install Gauge
+        uses: getgauge/setup-gauge@v1
+
+      - name: Install Gauge plugins
+        run: gauge install go && gauge install xml-report
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build CLI
+        run: cargo build --release
+
+      - name: Login to OCP cluster
+        run: |
+          set -euo pipefail
+          oc login "${{ inputs.cluster_api_url }}" \
+            -u kubeadmin \
+            -p "$CLUSTER_PASSWORD" \
+            --insecure-skip-tls-verify
+          echo "Logged in as: $(oc whoami)"
+          echo "Server: $(oc whoami --show-server)"
+
+      - name: Run midstreamer
+        run: |
+          set -euo pipefail
+          ./target/release/ocp-midstreamer run \
+            --components "${{ inputs.components }}" \
+            --release-tests-ref "${{ inputs.release_tests_ref }}" \
+            ${{ inputs.cli_flags }}
+
+      - name: Configure git for publish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to dashboard
+        run: |
+          set -euo pipefail
+          ./target/release/ocp-midstreamer publish \
+            --label "CI run: ${{ inputs.components }}"
+
+      - name: Write summary
+        if: always()
+        run: |
+          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          echo "## Midstreamer Run Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "[View Dashboard]($PAGES_URL)" >> "$GITHUB_STEP_SUMMARY"
