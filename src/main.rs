@@ -25,10 +25,25 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Check => {
+        Commands::Check { fix } => {
             match check::run_check(cli.verbose) {
-                Ok(true) => std::process::exit(0),
-                Ok(false) => std::process::exit(1),
+                Ok(true) => {
+                    if fix {
+                        eprintln!("\nAll checks passed, nothing to fix.");
+                    }
+                    std::process::exit(0);
+                }
+                Ok(false) => {
+                    if fix {
+                        eprintln!("\nRunning auto-setup to fix issues...");
+                        if let Err(e) = setup::run_auto_setup() {
+                            eprintln!("Auto-setup error: {e:#}");
+                            std::process::exit(2);
+                        }
+                        std::process::exit(0);
+                    }
+                    std::process::exit(1);
+                }
                 Err(e) => {
                     eprintln!("Error: {e:#}");
                     std::process::exit(2);

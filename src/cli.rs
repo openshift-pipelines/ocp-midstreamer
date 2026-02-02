@@ -19,7 +19,11 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Check tool prerequisites (oc, ko, git, go)
-    Check,
+    Check {
+        /// Auto-fix issues that are marked [auto-fixable] (registry route, operator install)
+        #[arg(long)]
+        fix: bool,
+    },
 
     /// Build Tekton component images and push to OCP internal registry
     Build {
