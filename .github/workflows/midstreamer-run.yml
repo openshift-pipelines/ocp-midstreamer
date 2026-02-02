@@ -88,6 +88,13 @@ jobs:
           echo "Logged in as: $(oc whoami)"
           echo "Server: $(oc whoami --show-server)"
 
+      - name: Login to OCP registry
+        run: |
+          set -euo pipefail
+          REGISTRY_HOST=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
+          oc registry login --to="$HOME/.docker/config.json"
+          echo "Registry: $REGISTRY_HOST"
+
       - name: Run midstreamer
         run: |
           set -euo pipefail
