@@ -163,10 +163,15 @@ pub async fn create_job(
 }
 
 /// Main entry point for in-cluster execution. Builds image, creates Job, returns immediately.
+/// Internal service address for the OCP image registry.
+/// Pods pull from this address (no auth needed with proper RBAC).
+const INTERNAL_REGISTRY: &str = "image-registry.openshift-image-registry.svc:5000";
+
 pub fn run_incluster(registry: &str, namespace: &str, cli_args: &[String]) -> Result<()> {
+    // Push to external route, but Job pulls via internal service address
     build_and_push_cli_image(registry)?;
 
-    let image_ref = cli_image_ref(registry);
+    let image_ref = cli_image_ref(INTERNAL_REGISTRY);
 
     // Append --skip-build so the in-cluster copy skips clone/build
     let mut job_args = cli_args.to_vec();
