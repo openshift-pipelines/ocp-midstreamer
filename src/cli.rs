@@ -30,6 +30,12 @@ pub enum Commands {
         /// Tekton component to build (default: pipeline)
         #[arg(long, default_value = "pipeline")]
         component: String,
+
+        /// External registry to push images to (e.g. quay.io/ocp-midstreamer).
+        /// When provided, images are pushed to this registry after ko build.
+        /// When omitted, images stay in the OCP internal registry.
+        #[arg(long)]
+        registry: Option<String>,
     },
 
     /// Deploy upstream-built images to the OpenShift Pipelines operator

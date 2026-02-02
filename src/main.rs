@@ -53,7 +53,7 @@ async fn main() {
                 }
             }
         }
-        Commands::Build { component } => {
+        Commands::Build { component, registry } => {
             if !cli.no_auto_setup {
                 let result = tokio::task::spawn_blocking(|| {
                     setup::run_auto_setup()
@@ -64,7 +64,7 @@ async fn main() {
                     Err(e) => eprintln!("WARNING: Auto-setup panicked: {e}"),
                 }
             }
-            match run_build(&component) {
+            match run_build(&component, registry.as_deref()) {
                 Ok(_) => std::process::exit(0),
                 Err(e) => {
                     eprintln!("Error: {e:#}");
@@ -343,7 +343,7 @@ fn load_image_names_from_config(component: &str) -> anyhow::Result<Vec<String>> 
     Ok(comp.images.keys().cloned().collect())
 }
 
-fn run_build(component: &str) -> anyhow::Result<()> {
+fn run_build(component: &str, external_registry: Option<&str>) -> anyhow::Result<()> {
     // Stage 1: Registry setup
     let pb = progress::stage_spinner("Registry setup");
     let route = registry::get_registry_route()?;
@@ -367,10 +367,19 @@ fn run_build(component: &str) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Component '{}' not in config", component))?;
 
     let pb = progress::stage_spinner("Build images with ko");
-    let image_names = build::ko_build(temp_dir.path(), &registry_target, &comp_cfg.import_paths)?;
+    let image_names = build::ko_build_with_external(
+        temp_dir.path(),
+        &registry_target,
+        &comp_cfg.import_paths,
+        external_registry,
+    )?;
     progress::finish_spinner(&pb, true);
 
-    println!("\nBuilt {} images for {}:", image_names.len(), component);
+    if external_registry.is_some() {
+        println!("\nBuilt and pushed {} images for {} to external registry:", image_names.len(), component);
+    } else {
+        println!("\nBuilt {} images for {}:", image_names.len(), component);
+    }
     for name in &image_names {
         println!("  - {}", name);
     }
