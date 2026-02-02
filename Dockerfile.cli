@@ -13,7 +13,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
-COPY components.toml ./
+COPY config/components.toml config/
 
 RUN cargo build --release
 
@@ -55,7 +55,7 @@ RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/pipelines/late
 
 # Copy CLI binary from build stage
 COPY --from=builder /build/target/release/ocp-midstreamer /usr/local/bin/ocp-midstreamer
-COPY components.toml /etc/ocp-midstreamer/components.toml
+COPY config/components.toml /etc/ocp-midstreamer/components.toml
 
 ENV OCP_MIDSTREAMER_INCLUSTER=1
 
