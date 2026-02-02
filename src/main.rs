@@ -36,7 +36,10 @@ async fn main() {
                 Ok(false) => {
                     if fix {
                         eprintln!("\nRunning auto-setup to fix issues...");
-                        if let Err(e) = setup::run_auto_setup() {
+                        let result = tokio::task::spawn_blocking(|| {
+                            setup::run_auto_setup()
+                        }).await.expect("spawn_blocking panicked");
+                        if let Err(e) = result {
                             eprintln!("Auto-setup error: {e:#}");
                             std::process::exit(2);
                         }
