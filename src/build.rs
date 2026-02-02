@@ -8,6 +8,7 @@ use crate::component::{self, ComponentSpec};
 use crate::config::ComponentConfig;
 use crate::exec;
 use crate::progress;
+use crate::registry;
 
 /// Clone a git repository (shallow, depth 1) into the given destination directory.
 pub fn clone_repo(repo_url: &str, dest: &Path) -> Result<()> {
@@ -23,7 +24,25 @@ pub fn clone_repo(repo_url: &str, dest: &Path) -> Result<()> {
 /// Runs ko from `source_dir` with `current_dir`.
 /// Returns the list of expected image names derived from import paths.
 pub fn ko_build(source_dir: &Path, registry: &str, import_paths: &[String]) -> Result<Vec<String>> {
-    let mut args: Vec<&str> = vec!["build", "--base-import-paths", "--sbom=none"];
+    ko_build_with_external(source_dir, registry, import_paths, None)
+}
+
+/// Build images using ko, optionally pushing to an external registry.
+///
+/// When `external_registry` is Some, images are copied from the build registry
+/// to the external registry using skopeo, and SHA-pinned external pullspecs are returned.
+/// When None, behaves like the original ko_build (returns image names only).
+pub fn ko_build_with_external(
+    source_dir: &Path,
+    registry: &str,
+    import_paths: &[String],
+    external_registry: Option<&str>,
+) -> Result<Vec<String>> {
+    // Create a temp file for --image-refs output
+    let image_refs_file = source_dir.join(".ko-image-refs");
+
+    let image_refs_path_str = image_refs_file.to_string_lossy().to_string();
+    let mut args: Vec<&str> = vec!["build", "--base-import-paths", "--sbom=none", "--image-refs", &image_refs_path_str];
     for p in import_paths {
         args.push(p.as_str());
     }
@@ -52,11 +71,33 @@ pub fn ko_build(source_dir: &Path, registry: &str, import_paths: &[String]) -> R
         anyhow::bail!("ko build failed with exit code {}", code);
     }
 
-    // Derive expected image names from import paths (last segment)
-    let image_names: Vec<String> = import_paths
+    // Collect SHA-pinned image refs from ko output
+    let image_refs = if image_refs_file.exists() {
+        registry::collect_image_refs(&image_refs_file)?
+    } else {
+        // Fallback: derive names from import paths (no SHA info)
+        import_paths
+            .iter()
+            .filter_map(|p| p.rsplit('/').next())
+            .map(|s| (s.to_string(), format!("{}/{}", registry, s)))
+            .collect()
+    };
+
+    // If external registry is specified, push each image there
+    if let Some(ext_registry) = external_registry {
+        eprintln!("Pushing {} images to external registry: {}", image_refs.len(), ext_registry);
+        let mut external_pullspecs = Vec::new();
+        for (_short_name, sha_ref) in &image_refs {
+            let pinned = registry::push_to_external(sha_ref, ext_registry)?;
+            external_pullspecs.push(pinned);
+        }
+        return Ok(external_pullspecs);
+    }
+
+    // Return image names (original behavior)
+    let image_names: Vec<String> = image_refs
         .iter()
-        .filter_map(|p| p.rsplit('/').next())
-        .map(|s| s.to_string())
+        .map(|(short_name, _)| short_name.clone())
         .collect();
 
     Ok(image_names)

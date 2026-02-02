@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
@@ -110,6 +110,72 @@ fn sync_docker_config() {
         // No existing docker config, just copy
         let _ = fs::write(&docker_config, &src);
     }
+}
+
+/// Push an image to an external registry (e.g. quay.io) using skopeo.
+///
+/// Copies the image from its current location to the target registry.
+/// Returns the SHA-pinned pullspec (e.g. quay.io/org/image@sha256:abc...).
+pub fn push_to_external(image_ref: &str, target_registry: &str) -> Result<String> {
+    // Derive image name from the source ref (last path segment before @/: tag)
+    let image_name = image_ref
+        .rsplit('/')
+        .next()
+        .unwrap_or(image_ref)
+        .split('@')
+        .next()
+        .unwrap_or(image_ref)
+        .split(':')
+        .next()
+        .unwrap_or(image_ref);
+
+    let dest = format!("docker://{}/{}", target_registry, image_name);
+    let src = format!("docker://{}", image_ref);
+
+    let _result = exec::run_cmd(
+        "skopeo",
+        &["copy", "--all", &src, &dest],
+    )?;
+
+    // Get the digest of the pushed image via skopeo inspect
+    let inspect_result = exec::run_cmd(
+        "skopeo",
+        &["inspect", "--format", "{{.Digest}}", &dest],
+    )?;
+    let digest = inspect_result.stdout.trim().to_string();
+
+    let pinned = format!("{}/{}@{}", target_registry, image_name, digest);
+    eprintln!("  Pushed: {}", pinned);
+    Ok(pinned)
+}
+
+/// Collect image references from ko's --image-refs output file.
+///
+/// Each line in the file is a SHA-pinned image reference produced by ko.
+/// Returns Vec of (short_name, sha_pullspec) pairs where short_name is the
+/// last path segment before the @sha256: digest.
+pub fn collect_image_refs(image_refs_file: &std::path::Path) -> Result<Vec<(String, String)>> {
+    let content = std::fs::read_to_string(image_refs_file)
+        .with_context(|| format!("failed to read image refs file: {}", image_refs_file.display()))?;
+
+    let mut refs = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Extract short name: last path segment before @sha256:
+        let short_name = line
+            .rsplit('/')
+            .next()
+            .unwrap_or(line)
+            .split('@')
+            .next()
+            .unwrap_or(line)
+            .to_string();
+        refs.push((short_name, line.to_string()));
+    }
+    Ok(refs)
 }
 
 /// Ensure a namespace exists, creating it if necessary.
