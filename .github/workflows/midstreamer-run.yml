@@ -88,6 +88,9 @@ jobs:
           echo "Logged in as: $(oc whoami)"
           echo "Server: $(oc whoami --show-server)"
 
+      - name: Auto-setup cluster prerequisites
+        run: ./target/release/ocp-midstreamer check
+
       - name: Login to OCP registry
         run: |
           set -euo pipefail
