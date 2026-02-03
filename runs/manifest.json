@@ -1,0 +1,12 @@
+{"runs": [
+    {
+      "id": "run-1770158476",
+      "date": "2026-02-04T00:00:00Z",
+      "timestamp": "2026-02-04T00:00:00Z",
+      "label": "Test publish from local",
+      "total": 42,
+      "passed": 38,
+      "failed": 4,
+      "file": "1770158476.json"
+    }
+]}
