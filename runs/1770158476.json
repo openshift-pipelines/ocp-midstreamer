@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-02-04T00:00:00Z",
+  "label": "Test publish from local",
+  "total": 42,
+  "passed": 38,
+  "failed": 4,
+  "duration_secs": 3600,
+  "tests": [
+    {"name": "PipelineRun basic", "status": "passed", "duration_secs": 120},
+    {"name": "TaskRun with params", "status": "passed", "duration_secs": 90},
+    {"name": "Trigger webhook", "status": "failed", "duration_secs": 45, "failure_category": "upstream_regression"},
+    {"name": "Results API", "status": "passed", "duration_secs": 60}
+  ]
+}
