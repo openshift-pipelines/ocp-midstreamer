@@ -124,6 +124,41 @@ pub enum Commands {
         job: Option<String>,
     },
 
+    /// Build Konflux-compatible SNAPSHOT and optionally trigger standalone release-test-pipeline
+    Konflux {
+        /// External registry for pushing images (e.g. quay.io/ocp-midstreamer)
+        #[arg(long)]
+        registry: String,
+
+        /// Operator repo branch to clone (e.g. main, release-v1.16)
+        #[arg(long, default_value = "main")]
+        operator_branch: String,
+
+        /// Output directory for SNAPSHOT and artifacts
+        #[arg(long, default_value = "./konflux-output")]
+        output_dir: String,
+
+        /// Components to include (e.g. "pipeline,triggers")
+        #[arg(long, default_value = "pipeline")]
+        components: String,
+
+        /// Git refs for components (e.g. "pipeline:pr/123,triggers:v0.28.0")
+        #[arg(long)]
+        refs: Option<String>,
+
+        /// After generating SNAPSHOT, trigger the standalone release-test-pipeline
+        #[arg(long)]
+        trigger: bool,
+
+        /// Namespace to run the pipeline in
+        #[arg(long, default_value = "ocp-midstreamer-test")]
+        pipeline_namespace: String,
+
+        /// Timeout in seconds for pipeline completion (default: 3600 = 1 hour)
+        #[arg(long, default_value = "3600")]
+        timeout: u64,
+    },
+
     /// Publish test results to gh-pages branch for dashboard
     Publish {
         /// Directory containing test output (logs/ and results/ subdirs)

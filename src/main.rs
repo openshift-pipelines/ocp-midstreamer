@@ -8,6 +8,7 @@ mod dryrun;
 mod exec;
 mod incluster;
 mod k8s;
+mod konflux;
 mod profile;
 mod progress;
 mod publish;
@@ -229,6 +230,101 @@ async fn main() {
             if let Err(e) = incluster::show_status(&client, namespace).await {
                 eprintln!("Error: {e:#}");
                 std::process::exit(2);
+            }
+        }
+        Commands::Konflux {
+            registry: _registry,
+            operator_branch: _operator_branch,
+            output_dir,
+            components: _components,
+            refs: _refs,
+            trigger,
+            pipeline_namespace,
+            timeout,
+        } => {
+            let output_path = std::path::Path::new(&output_dir);
+
+            // TODO: 12-02 will add bundle/snapshot generation here.
+            // For now, if --trigger is set, we need a pre-existing SNAPSHOT and operator dir.
+            if trigger {
+                let snapshot_path = output_path.join("snapshot.json");
+                let operator_dir = output_path.join("operator");
+
+                if !snapshot_path.exists() {
+                    eprintln!("Error: snapshot.json not found at {}", snapshot_path.display());
+                    eprintln!("Run without --trigger first to generate the SNAPSHOT, or provide a pre-built snapshot.");
+                    std::process::exit(2);
+                }
+                if !operator_dir.exists() {
+                    eprintln!("Error: operator directory not found at {}", operator_dir.display());
+                    std::process::exit(2);
+                }
+
+                eprintln!("\n=== Triggering standalone release-test-pipeline ===");
+                let pr_name = match konflux::trigger_pipeline(
+                    &snapshot_path,
+                    &operator_dir,
+                    &pipeline_namespace,
+                ) {
+                    Ok(name) => name,
+                    Err(e) => {
+                        eprintln!("Error triggering pipeline: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
+
+                eprintln!("PipelineRun: {}", pr_name);
+                let result = match konflux::wait_for_pipeline(&pr_name, &pipeline_namespace, timeout) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("Error waiting for pipeline: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
+
+                let duration_min = result.duration.as_secs() / 60;
+                println!("PipelineRun: {}", result.name);
+                println!("Status: {:?}", result.status);
+                println!("Reason: {}", result.reason);
+                println!("Duration: {}m {}s", duration_min, result.duration.as_secs() % 60);
+
+                // Collect results from pipeline task logs (regardless of pass/fail)
+                if result.status != konflux::PipelineRunStatus::Timeout {
+                    eprintln!("\n=== Collecting pipeline results ===");
+                    match konflux::collect_results(&pr_name, &pipeline_namespace, output_path) {
+                        Ok(task_results) => {
+                            if !task_results.is_empty() {
+                                konflux::print_pipeline_summary(&task_results);
+
+                                if let Err(e) = konflux::save_konflux_results(
+                                    &task_results, &snapshot_path, output_path,
+                                ) {
+                                    eprintln!("WARNING: Failed to save results: {e:#}");
+                                } else {
+                                    eprintln!(
+                                        "Results saved to {}/results/results.json. Run `ocp-midstreamer publish --output-dir {}` to update dashboard.",
+                                        output_dir, output_dir
+                                    );
+                                }
+                            } else {
+                                eprintln!("No test results collected from pipeline tasks.");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("WARNING: Failed to collect pipeline results: {e:#}");
+                        }
+                    }
+                }
+
+                match result.status {
+                    konflux::PipelineRunStatus::Succeeded => std::process::exit(0),
+                    konflux::PipelineRunStatus::Failed => std::process::exit(1),
+                    konflux::PipelineRunStatus::Timeout => std::process::exit(2),
+                }
+            } else {
+                eprintln!("SNAPSHOT generation not yet implemented (pending 12-02).");
+                eprintln!("Use --trigger with a pre-existing snapshot.json to run the pipeline.");
+                std::process::exit(0);
             }
         }
         Commands::Publish { output_dir, remote, label } => {

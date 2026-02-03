@@ -58,6 +58,8 @@ pub struct TestRunResult {
     pub failed: usize,
     pub errors: usize,
     pub duration_secs: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub tests: Vec<TestCaseResult>,
 }
 
@@ -332,8 +334,17 @@ pub fn parse_gauge_stdout(log_path: &Path) -> Result<TestRunResult> {
         failed,
         errors: 0,
         duration_secs: total_duration,
+        source: None,
         tests,
     })
+}
+
+/// Parse Gauge stdout from a string (for pipeline log output).
+pub fn parse_gauge_stdout_str(content: &str) -> Result<TestRunResult> {
+    // Write to a temp file and delegate to parse_gauge_stdout
+    let tmp = tempfile::NamedTempFile::new().context("Failed to create temp file for gauge output")?;
+    fs::write(tmp.path(), content)?;
+    parse_gauge_stdout(tmp.path())
 }
 
 /// Parse a JUnit XML file into a TestRunResult.
@@ -372,6 +383,7 @@ pub fn parse_junit_xml(xml_path: &Path) -> Result<TestRunResult> {
         failed,
         errors: 0,
         duration_secs: total_duration,
+        source: None,
         tests,
     })
 }
