@@ -198,6 +198,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const manifest = await resp.json();
     _allRuns = await loadRuns(manifest);
 
+    // Expose run data globally for timeline module
+    window.runData = _allRuns;
+
     if (_allRuns.length === 0) {
       showEmpty('No runs in manifest.');
       return;
@@ -212,6 +215,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Wire compare button
     setupCompare();
+
+    // Setup tab switching
+    setupTabs();
 
     console.log('Dashboard rendered with ' + _allRuns.length + ' runs');
   } catch (err) {
@@ -261,4 +267,41 @@ function showEmpty(msg) {
     p.textContent = msg;
     el.appendChild(p);
   }
+}
+
+/**
+ * Setup tab navigation functionality.
+ */
+function setupTabs() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.tab;
+
+      // Update button states
+      tabButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Show/hide tab content
+      tabContents.forEach(content => {
+        if (content.id === tabName + '-view') {
+          content.style.display = 'block';
+        } else {
+          content.style.display = 'none';
+        }
+      });
+
+      // Load timeline data when switching to timeline tab
+      if (tabName === 'timeline') {
+        // Update global runData in case it changed
+        window.runData = _allRuns;
+        // Trigger timeline module to load data
+        if (window.timelineModule) {
+          window.timelineModule.loadTimelineData();
+        }
+      }
+    });
+  });
 }
