@@ -1,3 +1,4 @@
+mod batch;
 mod build;
 mod bundle;
 mod callback;
@@ -12,6 +13,7 @@ mod github;
 mod incluster;
 mod k8s;
 mod konflux;
+mod perf;
 mod profile;
 mod progress;
 mod publish;
