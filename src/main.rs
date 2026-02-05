@@ -144,7 +144,7 @@ async fn main() {
             skip_build,
             profile,
         } => {
-            let specs = match components {
+            let mut specs = match components {
                 Some(ref s) => match component::parse_component_specs(s) {
                     Ok(v) => v,
                     Err(e) => {
@@ -154,6 +154,11 @@ async fn main() {
                 },
                 None => component::default_specs(),
             };
+
+            // Apply --as-of date to components without explicit refs
+            if let Some(ref date) = as_of {
+                component::apply_as_of_date(&mut specs, date);
+            }
 
             if !cli.no_auto_setup && !skip_build && !incluster::is_incluster() {
                 let result = tokio::task::spawn_blocking(|| {
@@ -183,7 +188,7 @@ async fn main() {
             }
 
             // Normal mode: build locally, then create in-cluster Job for deploy+test
-            let exit_code = run_multi(specs, dry_run, json, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose).await;
+            let exit_code = run_multi(specs, dry_run, json, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, as_of.as_deref()).await;
             std::process::exit(exit_code);
         }
         Commands::Results { output_dir } => {
@@ -296,6 +301,11 @@ async fn main() {
                             }
                         }
                     }
+                }
+
+                // Apply --as-of date to components without explicit refs
+                if let Some(ref date) = as_of {
+                    component::apply_as_of_date(&mut specs, date);
                 }
 
                 // Step 1: Build upstream images and push to external registry
@@ -636,6 +646,7 @@ async fn run_multi(
     output_dir: &str,
     registry_override: Option<&str>,
     _verbose: bool,
+    as_of: Option<&str>,
 ) -> i32 {
     let cfg = match config::load_config(&config::default_config_path()) {
         Ok(c) => c,
@@ -647,7 +658,7 @@ async fn run_multi(
 
     // Dry-run: just print the plan
     if dry_run {
-        return print_dry_run_plan(&specs, &cfg, json_output);
+        return print_dry_run_plan(&specs, &cfg, json_output, as_of);
     }
 
     // Registry setup
@@ -716,6 +727,10 @@ async fn run_multi(
         cli_args.push("--registry".to_string());
         cli_args.push(reg.to_string());
     }
+    if let Some(date) = as_of {
+        cli_args.push("--as-of".to_string());
+        cli_args.push(date.to_string());
+    }
 
     let registry_route_clone = registry_route.clone();
     let result = tokio::task::spawn_blocking(move || {
@@ -733,8 +748,9 @@ fn print_dry_run_plan(
     specs: &[component::ComponentSpec],
     cfg: &config::Config,
     json_output: bool,
+    as_of: Option<&str>,
 ) -> i32 {
-    let resolved = dryrun::resolve_components(specs, &cfg.components);
+    let resolved = dryrun::resolve_components_with_date(specs, &cfg.components, as_of);
     if json_output {
         dryrun::print_json(&resolved);
     } else {
