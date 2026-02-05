@@ -270,9 +270,21 @@ fn parse_perf_metrics(output: &str) -> PerfMetrics {
     metrics
 }
 
+/// Extract a numeric value after a colon in a line (e.g., "P50: 8.2" -> 8.2).
 fn extract_number(line: &str) -> Option<f64> {
+    // Look for value after colon first (most common format: "Key: Value")
+    if let Some(idx) = line.find(':') {
+        let value_part = &line[idx + 1..];
+        for word in value_part.split_whitespace() {
+            let cleaned = word.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-');
+            if let Ok(n) = cleaned.parse::<f64>() {
+                return Some(n);
+            }
+        }
+    }
+    // Fallback: find first number in line
     line.split_whitespace()
-        .filter_map(|s| s.trim_matches(|c: char| !c.is_ascii_digit() && c != '.').parse::<f64>().ok())
+        .filter_map(|s| s.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-').parse::<f64>().ok())
         .next()
 }
 
