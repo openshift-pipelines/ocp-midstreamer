@@ -1,4 +1,6 @@
 mod build;
+mod bundle;
+mod callback;
 mod check;
 mod cli;
 mod component;
@@ -6,6 +8,7 @@ mod config;
 mod deploy;
 mod dryrun;
 mod exec;
+mod github;
 mod incluster;
 mod k8s;
 mod konflux;
@@ -15,6 +18,7 @@ mod publish;
 mod registry;
 mod results;
 mod setup;
+mod snapshot;
 mod test;
 mod types;
 
@@ -164,12 +168,16 @@ async fn main() {
             if skip_build {
                 // In-cluster mode: skip clone/build, go straight to deploy+test
                 let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup).await;
+                // Publish results directly to gh-pages if configured
+                callback::maybe_publish_results();
                 std::process::exit(exit_code);
             }
 
             if incluster::is_incluster() {
                 // Already in-cluster: run deploy+test directly (don't re-wrap)
                 let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup).await;
+                // Publish results directly to gh-pages if configured
+                callback::maybe_publish_results();
                 std::process::exit(exit_code);
             }
 
@@ -233,37 +241,165 @@ async fn main() {
             }
         }
         Commands::Konflux {
-            registry: _registry,
-            operator_branch: _operator_branch,
+            registry,
+            operator_branch,
             output_dir,
-            components: _components,
-            refs: _refs,
+            components,
+            refs,
             trigger,
             pipeline_namespace,
             timeout,
         } => {
             let output_path = std::path::Path::new(&output_dir);
+            std::fs::create_dir_all(output_path).expect("Failed to create output directory");
 
-            // TODO: 12-02 will add bundle/snapshot generation here.
-            // For now, if --trigger is set, we need a pre-existing SNAPSHOT and operator dir.
-            if trigger {
-                let snapshot_path = output_path.join("snapshot.json");
-                let operator_dir = output_path.join("operator");
+            let snapshot_path = output_path.join("snapshot.json");
+            let operator_dir_path = output_path.join("operator");
 
-                if !snapshot_path.exists() {
-                    eprintln!("Error: snapshot.json not found at {}", snapshot_path.display());
-                    eprintln!("Run without --trigger first to generate the SNAPSHOT, or provide a pre-built snapshot.");
+            // Check if we already have a snapshot (skip build phase)
+            let need_build = !snapshot_path.exists();
+
+            if need_build {
+                eprintln!("\n=== Building Konflux SNAPSHOT ===\n");
+
+                // Auto-setup cluster if needed
+                if !cli.no_auto_setup {
+                    let result = tokio::task::spawn_blocking(|| {
+                        setup::run_auto_setup()
+                    }).await;
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => eprintln!("WARNING: Auto-setup had errors: {e:#}"),
+                        Err(e) => eprintln!("WARNING: Auto-setup panicked: {e}"),
+                    }
+                }
+
+                // Parse component specs (refs can be embedded like "pipeline:v0.60.0,triggers")
+                let mut specs = match component::parse_component_specs(&components) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("Error parsing components: {e}");
+                        std::process::exit(2);
+                    }
+                };
+
+                // Apply refs if provided separately (overrides embedded refs)
+                if let Some(ref refs_str) = refs {
+                    for ref_part in refs_str.split(',') {
+                        if let Some((name, git_ref)) = ref_part.trim().split_once(':') {
+                            for spec in &mut specs {
+                                if spec.name == name.trim() {
+                                    spec.git_ref = Some(git_ref.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Step 1: Build upstream images and push to external registry
+                eprintln!("Step 1: Building upstream images...");
+                let mut all_image_refs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+                for spec in &specs {
+                    eprintln!("\n  Building {}...", spec.name);
+                    match build::run_build_with_refs(&spec.name, Some(&registry), &spec.git_ref) {
+                        Ok(refs) => {
+                            for (name, pullspec) in refs {
+                                all_image_refs.insert(name, pullspec);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error building {}: {e:#}", spec.name);
+                            std::process::exit(2);
+                        }
+                    }
+                }
+
+                eprintln!("\n  Built {} images", all_image_refs.len());
+
+                // Step 2: Clone operator repo
+                eprintln!("\nStep 2: Cloning operator repo (branch: {})...", operator_branch);
+                let temp_operator_dir = match bundle::clone_operator_repo(&operator_branch) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("Error cloning operator: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
+
+                // Copy operator dir to output for pipeline trigger
+                if operator_dir_path.exists() {
+                    let _ = std::fs::remove_dir_all(&operator_dir_path);
+                }
+                let copy_result = std::process::Command::new("cp")
+                    .args(["-r", temp_operator_dir.to_str().unwrap(), operator_dir_path.to_str().unwrap()])
+                    .status();
+                if copy_result.is_err() || !copy_result.unwrap().success() {
+                    eprintln!("WARNING: Failed to copy operator dir to output");
+                }
+
+                // Step 3: Patch CSV with upstream images
+                eprintln!("\nStep 3: Patching CSV with upstream images...");
+                if let Err(e) = bundle::patch_csv(&temp_operator_dir, &all_image_refs) {
+                    eprintln!("Error patching CSV: {e:#}");
                     std::process::exit(2);
                 }
-                if !operator_dir.exists() {
-                    eprintln!("Error: operator directory not found at {}", operator_dir.display());
+
+                // Generate timestamp tag
+                let tag = format!("upstream-{}", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs());
+
+                // Step 4: Build bundle image
+                eprintln!("\nStep 4: Building operator bundle image...");
+                let bundle_pullspec = match bundle::build_bundle_image(&temp_operator_dir, &registry, &tag) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Error building bundle: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
+
+                // Step 5: Build FBC index image
+                eprintln!("\nStep 5: Building FBC index image...");
+                let index_pullspec = match bundle::build_index_image(&bundle_pullspec, &registry, &tag) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Error building index: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
+
+                // Step 6: Generate SNAPSHOT
+                eprintln!("\nStep 6: Generating SNAPSHOT...");
+                if let Err(e) = snapshot::generate_snapshot(&index_pullspec, &snapshot_path) {
+                    eprintln!("Error generating snapshot: {e:#}");
+                    std::process::exit(2);
+                }
+
+                eprintln!("\n=== SNAPSHOT generated successfully ===");
+                eprintln!("  Output: {}", snapshot_path.display());
+                eprintln!("  Index: {}", index_pullspec);
+
+                // Cleanup temp dir
+                let _ = std::fs::remove_dir_all(&temp_operator_dir);
+            } else {
+                eprintln!("Using existing snapshot at {}", snapshot_path.display());
+            }
+
+            // Trigger pipeline if requested
+            if trigger {
+                if !operator_dir_path.exists() {
+                    eprintln!("Error: operator directory not found at {}", operator_dir_path.display());
+                    eprintln!("Run without --trigger first to generate the SNAPSHOT and operator clone.");
                     std::process::exit(2);
                 }
 
                 eprintln!("\n=== Triggering standalone release-test-pipeline ===");
                 let pr_name = match konflux::trigger_pipeline(
                     &snapshot_path,
-                    &operator_dir,
+                    &operator_dir_path,
                     &pipeline_namespace,
                 ) {
                     Ok(name) => name,
@@ -283,7 +419,7 @@ async fn main() {
                 };
 
                 let duration_min = result.duration.as_secs() / 60;
-                println!("PipelineRun: {}", result.name);
+                println!("\nPipelineRun: {}", result.name);
                 println!("Status: {:?}", result.status);
                 println!("Reason: {}", result.reason);
                 println!("Duration: {}m {}s", duration_min, result.duration.as_secs() % 60);
@@ -302,8 +438,12 @@ async fn main() {
                                     eprintln!("WARNING: Failed to save results: {e:#}");
                                 } else {
                                     eprintln!(
-                                        "Results saved to {}/results/results.json. Run `ocp-midstreamer publish --output-dir {}` to update dashboard.",
-                                        output_dir, output_dir
+                                        "\nResults saved to {}/results/results.json",
+                                        output_dir
+                                    );
+                                    eprintln!(
+                                        "Run `ocp-midstreamer publish --output-dir {}` to update dashboard.",
+                                        output_dir
                                     );
                                 }
                             } else {
@@ -322,8 +462,8 @@ async fn main() {
                     konflux::PipelineRunStatus::Timeout => std::process::exit(2),
                 }
             } else {
-                eprintln!("SNAPSHOT generation not yet implemented (pending 12-02).");
-                eprintln!("Use --trigger with a pre-existing snapshot.json to run the pipeline.");
+                eprintln!("\nTo trigger the pipeline, run:");
+                eprintln!("  ocp-midstreamer konflux --registry {} --trigger --output-dir {}", registry, output_dir);
                 std::process::exit(0);
             }
         }
