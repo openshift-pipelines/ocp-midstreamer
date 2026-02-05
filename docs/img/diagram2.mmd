@@ -1,0 +1,9 @@
+flowchart TD
+    A["streamstress deploy"] --> B["Find Operator CSV\n(via OLM API)"]
+    B --> C["Patch CSV env vars\nIMAGE_PIPELINES_CONTROLLER = svc:5000/..."]
+    C --> D["Delete InstallerSets\n(force re-reconciliation)"]
+    D --> E["OLM detects CSV change"]
+    E --> F["OLM updates Deployment specs"]
+    F --> G["Pods restart with\nupstream-built images"]
+    G --> H["Poll TektonConfig\nuntil Ready=True"]
+    H --> I["Verify pod images\nmatch expected refs"]
