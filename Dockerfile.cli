@@ -42,10 +42,12 @@ ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 # Install ko
 RUN go install github.com/google/ko@latest
 
-# Install gauge
+# Install gauge and required plugins
 RUN wget -q https://github.com/getgauge/gauge/releases/download/v1.6.3/gauge-1.6.3-linux.x86_64.zip \
     && unzip -q gauge-1.6.3-linux.x86_64.zip -d /usr/local/bin \
-    && rm -f gauge-1.6.3-linux.x86_64.zip
+    && rm -f gauge-1.6.3-linux.x86_64.zip \
+    && gauge install go \
+    && gauge install xml-report
 
 # Install opc (OpenShift Pipelines CLI)
 RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/pipelines/latest/tkn-linux-amd64.tar.gz \

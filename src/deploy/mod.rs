@@ -12,6 +12,10 @@ const INTERNAL_REGISTRY: &str = "image-registry.openshift-image-registry.svc:500
 fn to_internal_registry(registry: &str) -> String {
     // If it already uses the internal service, return as-is
     if registry.starts_with(INTERNAL_REGISTRY) {
+        // Ensure namespace is present even if internal registry was passed bare
+        if !registry.contains("/tekton-upstream") {
+            return format!("{}/tekton-upstream", INTERNAL_REGISTRY);
+        }
         return registry.to_string();
     }
     // Extract namespace path after the hostname (e.g. "/tekton-upstream")
@@ -19,8 +23,8 @@ fn to_internal_registry(registry: &str) -> String {
         let namespace_path = &registry[slash_pos..];
         format!("{}{}", INTERNAL_REGISTRY, namespace_path)
     } else {
-        // No namespace in the path — just use internal registry host
-        INTERNAL_REGISTRY.to_string()
+        // No namespace in the path — default to tekton-upstream
+        format!("{}/tekton-upstream", INTERNAL_REGISTRY)
     }
 }
 
