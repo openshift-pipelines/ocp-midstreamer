@@ -82,8 +82,15 @@ pub enum Commands {
         /// Build/test components as they existed on this date (YYYY-MM-DD).
         /// Components with explicit refs (e.g. pipeline:v0.50.0) ignore this.
         /// Resolves to the last commit before end-of-day UTC.
-        #[arg(long, value_parser = crate::component::validate_date_format)]
+        #[arg(long, value_parser = crate::component::validate_date_format, conflicts_with = "date_range")]
         as_of: Option<String>,
+
+        /// Run tests for each day in a date range (YYYY-MM-DD:YYYY-MM-DD).
+        /// Executes sequentially: build-deploy-test for each date before moving to next.
+        /// Results stored in output-dir/DATE/ subdirectories.
+        /// Mutually exclusive with --as-of.
+        #[arg(long, value_parser = crate::batch::parse_date_range, conflicts_with = "as_of")]
+        date_range: Option<crate::batch::DateRange>,
 
         /// Print the execution plan without building, deploying, or testing
         #[arg(long)]
