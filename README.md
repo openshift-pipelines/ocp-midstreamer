@@ -1,8 +1,8 @@
-# ocp-midstreamer
+# streamstress
 
 Detect upstream Tekton changes that break OpenShift Pipelines — before they reach the midstream.
 
-`ocp-midstreamer` is a Rust CLI that builds upstream Tekton components from source, swaps the resulting images into a live OpenShift Pipelines operator deployment, and runs the [release-tests](https://github.com/openshift-pipelines/release-tests) suite to catch regressions early.
+`streamstress` is a Rust CLI that builds upstream Tekton components from source, swaps the resulting images into a live OpenShift Pipelines operator deployment, and runs the [release-tests](https://github.com/openshift-pipelines/release-tests) suite to catch regressions early.
 
 ## What It Does
 
@@ -56,39 +56,39 @@ Component configuration lives in `config/components.toml` — each entry maps up
 cargo build --release
 
 # Check prerequisites and cluster connectivity
-ocp-midstreamer check
+streamstress check
 
 # Full build → deploy → test for one component
-ocp-midstreamer run --components pipeline
+streamstress run --components pipeline
 
 # All components
-ocp-midstreamer run --components pipeline,triggers,chains,results,manual-approval-gate
+streamstress run --components pipeline,triggers,chains,results,manual-approval-gate
 
 # Pin specific git refs (branch, tag, PR, or commit)
-ocp-midstreamer run --components "pipeline:v0.62.0,triggers:pr/123"
+streamstress run --components "pipeline:v0.62.0,triggers:pr/123"
 
 # Dry run — resolve refs, show plan, don't execute
-ocp-midstreamer run --components pipeline,triggers --dry-run
-ocp-midstreamer run --components pipeline --dry-run --json
+streamstress run --components pipeline,triggers --dry-run
+streamstress run --components pipeline --dry-run --json
 
 # With resource profiling (metrics-server required)
-ocp-midstreamer run --components pipeline --profile
+streamstress run --components pipeline --profile
 
 # Individual stages
-ocp-midstreamer build --component pipeline
-ocp-midstreamer deploy --component pipeline --registry <registry-route>/tekton-upstream
-ocp-midstreamer test --release-tests-ref master
+streamstress build --component pipeline
+streamstress deploy --component pipeline --registry <registry-route>/tekton-upstream
+streamstress test --release-tests-ref master
 
 # Re-analyze past results
-ocp-midstreamer results --output-dir ./test-output
+streamstress results --output-dir ./test-output
 
 # In-cluster Job management
-ocp-midstreamer status
-ocp-midstreamer logs
-ocp-midstreamer logs --job ocp-midstreamer-1706900000
+streamstress status
+streamstress logs
+streamstress logs --job streamstress-1706900000
 
 # Publish results to dashboard
-ocp-midstreamer publish --label "upstream pipeline @ main"
+streamstress publish --label "upstream pipeline @ main"
 ```
 
 ## Subcommands
@@ -101,7 +101,7 @@ ocp-midstreamer publish --label "upstream pipeline @ main"
 | `test` | Clone release-tests, run Gauge specs, parse JUnit XML or stdout, categorize failures. |
 | `run` | Full orchestration: auto-setup → parallel builds → in-cluster Job for deploy+test. |
 | `results` | Offline re-analysis of a previous test run's output directory. |
-| `status` | List ocp-midstreamer Jobs in the cluster with status and age. |
+| `status` | List streamstress Jobs in the cluster with status and age. |
 | `logs` | Stream logs from the most recent (or named) Job pod. |
 | `publish` | Push results JSON + dashboard assets to gh-pages orphan branch. |
 
@@ -150,10 +150,10 @@ Test failures are automatically categorized by keyword matching:
 
 ## CI/CD
 
-GitHub Actions workflow at `.github/workflows/midstreamer-run.yml`:
+GitHub Actions workflow at `.github/workflows/streamstress-run.yml`:
 
 ```bash
-gh workflow run midstreamer-run.yml \
+gh workflow run streamstress-run.yml \
   -f cluster_api_url="https://api.cluster.example.com:6443" \
   -f cluster_password="..." \
   -f components="pipeline,triggers,chains,results,manual-approval-gate" \
@@ -165,7 +165,7 @@ The workflow installs all tools, builds the CLI, authenticates to the cluster an
 
 ## Dashboard
 
-Published via `ocp-midstreamer publish`, the dashboard provides:
+Published via `streamstress publish`, the dashboard provides:
 
 - D3.js trend charts (pass/fail rates across runs)
 - Per-test expandable result tables
