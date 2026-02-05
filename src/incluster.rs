@@ -13,7 +13,7 @@ pub fn cli_image_tag() -> String {
 /// Returns the full image reference for the CLI container.
 pub fn cli_image_ref(registry: &str) -> String {
     format!(
-        "{}/openshift-pipelines/ocp-midstreamer-cli:{}",
+        "{}/openshift-pipelines/streamstress-cli:{}",
         registry,
         cli_image_tag()
     )
@@ -62,13 +62,13 @@ pub async fn ensure_service_account(client: &kube::Client, namespace: &str) -> R
         "apiVersion": "v1",
         "kind": "ServiceAccount",
         "metadata": {
-            "name": "ocp-midstreamer-sa",
+            "name": "streamstress-sa",
             "namespace": namespace
         }
     }))?;
 
     match sa_api.create(&PostParams::default(), &sa).await {
-        Ok(_) => eprintln!("Created ServiceAccount ocp-midstreamer-sa"),
+        Ok(_) => eprintln!("Created ServiceAccount streamstress-sa"),
         Err(kube::Error::Api(ae)) if ae.code == 409 => {
             // Already exists
         }
@@ -80,7 +80,7 @@ pub async fn ensure_service_account(client: &kube::Client, namespace: &str) -> R
         "apiVersion": "rbac.authorization.k8s.io/v1",
         "kind": "ClusterRoleBinding",
         "metadata": {
-            "name": "ocp-midstreamer-crb"
+            "name": "streamstress-crb"
         },
         "roleRef": {
             "apiGroup": "rbac.authorization.k8s.io",
@@ -89,13 +89,13 @@ pub async fn ensure_service_account(client: &kube::Client, namespace: &str) -> R
         },
         "subjects": [{
             "kind": "ServiceAccount",
-            "name": "ocp-midstreamer-sa",
+            "name": "streamstress-sa",
             "namespace": namespace
         }]
     }))?;
 
     match crb_api.create(&PostParams::default(), &crb).await {
-        Ok(_) => eprintln!("Created ClusterRoleBinding ocp-midstreamer-crb"),
+        Ok(_) => eprintln!("Created ClusterRoleBinding streamstress-crb"),
         Err(kube::Error::Api(ae)) if ae.code == 409 => {
             // Already exists
         }
@@ -105,20 +105,65 @@ pub async fn ensure_service_account(client: &kube::Client, namespace: &str) -> R
     Ok(())
 }
 
+/// Publish configuration passed to the Job for direct gh-pages push.
+#[derive(Debug, Clone, Default)]
+pub struct PublishEnv {
+    pub github_token: Option<String>,
+    pub github_repository: Option<String>,
+    pub label: Option<String>,
+    pub output_dir: Option<String>,
+}
+
+impl PublishEnv {
+    /// Load publish config from current environment (for passing to Job).
+    pub fn from_env() -> Self {
+        Self {
+            github_token: std::env::var("GITHUB_TOKEN").ok(),
+            github_repository: std::env::var("GITHUB_REPOSITORY").ok(),
+            label: std::env::var("RUN_LABEL").ok(),
+            output_dir: std::env::var("OUTPUT_DIR").ok(),
+        }
+    }
+
+    /// Check if publish is configured.
+    pub fn is_configured(&self) -> bool {
+        self.github_token.is_some() && self.github_repository.is_some()
+    }
+}
+
 /// Create a detached Kubernetes Job for in-cluster execution. Returns the Job name.
 pub async fn create_job(
     client: &kube::Client,
     namespace: &str,
     image_ref: &str,
     cli_args: &[String],
+    publish_env: &PublishEnv,
 ) -> Result<String> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let job_name = format!("ocp-midstreamer-{}", timestamp);
+    let job_name = format!("streamstress-{}", timestamp);
 
     let args_json: Vec<serde_json::Value> = cli_args.iter().map(|a| serde_json::json!(a)).collect();
+
+    // Build env vars for direct gh-pages publish (if configured)
+    let mut env_vars: Vec<serde_json::Value> = vec![
+        serde_json::json!({"name": "JOB_NAME", "value": &job_name}),
+    ];
+
+    if let Some(ref token) = publish_env.github_token {
+        env_vars.push(serde_json::json!({"name": "GITHUB_TOKEN", "value": token}));
+    }
+    if let Some(ref repo) = publish_env.github_repository {
+        env_vars.push(serde_json::json!({"name": "GITHUB_REPOSITORY", "value": repo}));
+    }
+    if let Some(ref label) = publish_env.label {
+        env_vars.push(serde_json::json!({"name": "RUN_LABEL", "value": label}));
+    }
+    if let Some(ref output_dir) = publish_env.output_dir {
+        env_vars.push(serde_json::json!({"name": "OUTPUT_DIR", "value": output_dir}));
+    }
 
     let job: Job = serde_json::from_value(serde_json::json!({
         "apiVersion": "batch/v1",
@@ -127,26 +172,27 @@ pub async fn create_job(
             "name": &job_name,
             "namespace": namespace,
             "labels": {
-                "app": "ocp-midstreamer"
+                "app": "streamstress"
             }
         },
         "spec": {
             "backoffLimit": 0,
-            "activeDeadlineSeconds": 7200,
+            "activeDeadlineSeconds": 10800,
             "template": {
                 "metadata": {
                     "labels": {
-                        "app": "ocp-midstreamer",
+                        "app": "streamstress",
                         "job-name": &job_name
                     }
                 },
                 "spec": {
-                    "serviceAccountName": "ocp-midstreamer-sa",
+                    "serviceAccountName": "streamstress-sa",
                     "restartPolicy": "Never",
                     "containers": [{
-                        "name": "midstreamer",
+                        "name": "streamstress",
                         "image": image_ref,
-                        "args": args_json
+                        "args": args_json,
+                        "env": env_vars
                     }]
                 }
             }
@@ -179,6 +225,12 @@ pub fn run_incluster(registry: &str, namespace: &str, cli_args: &[String]) -> Re
         job_args.push("--skip-build".to_string());
     }
 
+    // Load publish env from current environment (CI passes these)
+    let publish_env = PublishEnv::from_env();
+    if publish_env.is_configured() {
+        eprintln!("Auto-publish configured: results will be pushed to gh-pages when Job completes");
+    }
+
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -189,23 +241,23 @@ pub fn run_incluster(registry: &str, namespace: &str, cli_args: &[String]) -> Re
         .context("Failed to connect to cluster")?;
 
     rt.block_on(ensure_service_account(&client, namespace))?;
-    let job_name = rt.block_on(create_job(&client, namespace, &image_ref, &job_args))?;
+    let job_name = rt.block_on(create_job(&client, namespace, &image_ref, &job_args, &publish_env))?;
 
     eprintln!("Job {} created in namespace {}", job_name, namespace);
-    eprintln!("  View status:  ocp-midstreamer status");
-    eprintln!("  Stream logs:  ocp-midstreamer logs");
+    eprintln!("  View status:  streamstress status");
+    eprintln!("  Stream logs:  streamstress logs");
 
     Ok(())
 }
 
-/// Show status of midstreamer Jobs in the namespace.
+/// Show status of streamstress Jobs in the namespace.
 pub async fn show_status(client: &kube::Client, namespace: &str) -> Result<()> {
     let jobs_api: Api<Job> = Api::namespaced(client.clone(), namespace);
-    let lp = ListParams::default().labels("app=ocp-midstreamer");
+    let lp = ListParams::default().labels("app=streamstress");
     let job_list = jobs_api.list(&lp).await.context("Failed to list Jobs")?;
 
     if job_list.items.is_empty() {
-        println!("No midstreamer Jobs found in namespace {}", namespace);
+        println!("No streamstress Jobs found in namespace {}", namespace);
         return Ok(());
     }
 
@@ -261,7 +313,7 @@ pub async fn show_status(client: &kube::Client, namespace: &str) -> Result<()> {
     Ok(())
 }
 
-/// Stream logs from the most recent (or specified) midstreamer Job pod.
+/// Stream logs from the most recent (or specified) streamstress Job pod.
 pub async fn stream_job_logs(
     client: &kube::Client,
     namespace: &str,
@@ -273,7 +325,7 @@ pub async fn stream_job_logs(
         name.to_string()
     } else {
         // Find the most recent Job
-        let lp = ListParams::default().labels("app=ocp-midstreamer");
+        let lp = ListParams::default().labels("app=streamstress");
         let job_list = jobs_api.list(&lp).await.context("Failed to list Jobs")?;
         let most_recent = job_list
             .items
@@ -285,7 +337,7 @@ pub async fn stream_job_logs(
                     .map(|t| t.0.as_second())
                     .unwrap_or(0)
             })
-            .ok_or_else(|| anyhow::anyhow!("No midstreamer Jobs found"))?;
+            .ok_or_else(|| anyhow::anyhow!("No streamstress Jobs found"))?;
         most_recent
             .metadata
             .name

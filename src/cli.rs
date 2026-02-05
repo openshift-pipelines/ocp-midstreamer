@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 
 #[derive(Parser, Debug)]
-#[command(name = "ocp-midstreamer", about = "OpenShift Pipelines midstream management CLI")]
+#[command(name = "streamstress", about = "OpenShift Pipelines upstream regression detection CLI")]
 pub struct Cli {
     /// Enable verbose output
     #[arg(long, global = true)]
@@ -31,7 +31,7 @@ pub enum Commands {
         #[arg(long, default_value = "pipeline")]
         component: String,
 
-        /// External registry to push images to (e.g. quay.io/ocp-midstreamer).
+        /// External registry to push images to (e.g. quay.io/streamstress).
         /// When provided, images are pushed to this registry after ko build.
         /// When omitted, images stay in the OCP internal registry.
         #[arg(long)]
@@ -147,10 +147,10 @@ pub enum Commands {
         output_dir: String,
     },
 
-    /// Show status of running/completed midstreamer Jobs
+    /// Show status of running/completed streamstress Jobs
     Status,
 
-    /// Stream logs from a midstreamer Job pod
+    /// Stream logs from a streamstress Job pod
     Logs {
         /// Job name to stream logs from (default: most recent)
         #[arg(long)]
@@ -159,7 +159,7 @@ pub enum Commands {
 
     /// Build Konflux-compatible SNAPSHOT and optionally trigger standalone release-test-pipeline
     Konflux {
-        /// External registry for pushing images (e.g. quay.io/ocp-midstreamer)
+        /// External registry for pushing images (e.g. quay.io/streamstress)
         #[arg(long)]
         registry: String,
 
@@ -189,7 +189,7 @@ pub enum Commands {
         trigger: bool,
 
         /// Namespace to run the pipeline in
-        #[arg(long, default_value = "ocp-midstreamer-test")]
+        #[arg(long, default_value = "streamstress-test")]
         pipeline_namespace: String,
 
         /// Timeout in seconds for pipeline completion (default: 3600 = 1 hour)

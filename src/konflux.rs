@@ -219,7 +219,7 @@ pub fn trigger_pipeline(
 
     // 4. Create PipelineRun
     let pipelinerun_name = format!(
-        "midstreamer-test-{}",
+        "streamstress-test-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

@@ -1,4 +1,4 @@
-# Multi-stage build for ocp-midstreamer CLI container image.
+# Multi-stage build for streamstress CLI container image.
 # Runtime image includes full toolchain: oc, ko, go, git, gauge, opc, tar.
 
 # --- Build stage ---
@@ -54,9 +54,15 @@ RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/pipelines/late
     && rm -f tkn-linux-amd64.tar.gz
 
 # Copy CLI binary from build stage
-COPY --from=builder /build/target/release/ocp-midstreamer /usr/local/bin/ocp-midstreamer
-COPY config/components.toml /etc/ocp-midstreamer/components.toml
+COPY --from=builder /build/target/release/streamstress /usr/local/bin/streamstress
+COPY config/components.toml /etc/streamstress/components.toml
 
-ENV OCP_MIDSTREAMER_INCLUSTER=1
+# Copy CI scripts for auto-publish
+COPY scripts/publish-to-gh-pages.sh /usr/local/bin/publish-to-gh-pages.sh
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/publish-to-gh-pages.sh /usr/local/bin/entrypoint.sh
 
-ENTRYPOINT ["ocp-midstreamer"]
+ENV STREAMSTRESS_INCLUSTER=1
+
+# Entrypoint wrapper: runs streamstress, then publishes if configured
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -9,7 +9,7 @@ pub fn publish(output_dir: &str, remote: Option<&str>, label: Option<&str>) -> R
     let results_path = Path::new(output_dir).join("results/results.json");
     if !results_path.exists() {
         anyhow::bail!(
-            "Results not found at {}. Run `ocp-midstreamer results` first.",
+            "Results not found at {}. Run `streamstress results` first.",
             results_path.display()
         );
     }

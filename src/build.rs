@@ -5,10 +5,132 @@ use std::process::{Command, Stdio};
 use tokio::task::JoinSet;
 
 use crate::component::{self, ComponentSpec};
-use crate::config::ComponentConfig;
+use crate::config::{self, ComponentConfig};
 use crate::exec;
 use crate::progress;
 use crate::registry;
+
+/// Build a component and return a HashMap of IMAGE_ env var -> SHA-pinned pullspec.
+///
+/// This function:
+/// 1. Loads the component config
+/// 2. Clones the repo with the specified git ref
+/// 3. Builds with ko to internal registry (capturing SHA refs)
+/// 4. Pushes to external registry using skopeo
+/// 5. Returns HashMap where key is IMAGE_ env var name, value is SHA pullspec
+pub fn run_build_with_refs(
+    component: &str,
+    external_registry: Option<&str>,
+    git_ref: &Option<String>,
+) -> Result<HashMap<String, String>> {
+    let config_path = config::default_config_path();
+    let config = config::load_config(&config_path)
+        .with_context(|| format!("Failed to load config from {}", config_path.display()))?;
+
+    let comp_cfg = config
+        .components
+        .get(component)
+        .ok_or_else(|| anyhow::anyhow!("Component '{}' not found in config", component))?;
+
+    // Create temp directory for clone
+    let temp_dir = tempfile::tempdir()
+        .with_context(|| "Failed to create temp directory")?;
+
+    // Clone with git ref
+    eprintln!("  Cloning {} (ref: {})...", comp_cfg.repo, git_ref.as_deref().unwrap_or("HEAD"));
+    component::clone_with_ref(&comp_cfg.repo, temp_dir.path(), git_ref.as_deref())?;
+
+    // Get internal registry for building (ko pushes here)
+    let internal_registry = registry::get_registry_route()
+        .with_context(|| "Failed to get internal registry route")?;
+    let internal_registry = format!("{}/tekton-upstream", internal_registry);
+
+    // Login to internal registry
+    let registry_host = internal_registry.split('/').next().unwrap_or(&internal_registry);
+    registry::registry_login(registry_host)?;
+
+    let image_refs: Vec<(String, String)> = match comp_cfg.build_system.as_deref() {
+        Some("docker") => {
+            // Docker build to internal registry
+            let built = docker_build(temp_dir.path(), &internal_registry, &comp_cfg.images)?;
+            // Get digests
+            let mut refs = Vec::new();
+            for image_name in built {
+                let tag = format!("{}/{}", internal_registry, image_name);
+                let inspect = exec::run_cmd(
+                    "skopeo",
+                    &["inspect", "--format", "{{.Digest}}", &format!("docker://{}", tag), "--tls-verify=false"],
+                );
+                let pullspec = match inspect {
+                    Ok(r) if r.exit_code == 0 => {
+                        format!("{}@{}", tag.split(':').next().unwrap_or(&tag), r.stdout.trim())
+                    }
+                    _ => tag,
+                };
+                refs.push((image_name, pullspec));
+            }
+            refs
+        }
+        _ => {
+            // ko build with --image-refs to internal registry
+            let image_refs_file = temp_dir.path().join(".ko-image-refs");
+            let image_refs_path_str = image_refs_file.to_string_lossy().to_string();
+
+            let mut args: Vec<&str> = vec!["build", "--base-import-paths", "--sbom=none", "--image-refs", &image_refs_path_str];
+            for p in &comp_cfg.import_paths {
+                args.push(p.as_str());
+            }
+
+            eprintln!("  Building to internal registry: {}", internal_registry);
+            let status = Command::new("ko")
+                .args(&args)
+                .env("KO_DOCKER_REPO", &internal_registry)
+                .env("GOFLAGS", "-mod=vendor")
+                .current_dir(temp_dir.path())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .with_context(|| "failed to execute ko")?;
+
+            if !status.success() {
+                anyhow::bail!("ko build failed for {}", component);
+            }
+
+            // Collect refs from ko output
+            if image_refs_file.exists() {
+                registry::collect_image_refs(&image_refs_file)?
+            } else {
+                anyhow::bail!("ko did not produce image refs file");
+            }
+        }
+    };
+
+    // Push to external registry if specified
+    let final_refs: Vec<(String, String)> = if let Some(ext_reg) = external_registry {
+        eprintln!("  Pushing {} images to external registry: {}", image_refs.len(), ext_reg);
+        let mut pushed = Vec::new();
+        for (short_name, sha_ref) in image_refs {
+            let pinned = registry::push_to_external(&sha_ref, ext_reg)?;
+            pushed.push((short_name, pinned));
+        }
+        pushed
+    } else {
+        image_refs
+    };
+
+    // Map short names to IMAGE_ env var names
+    let mut result: HashMap<String, String> = HashMap::new();
+    for (short_name, pullspec) in final_refs {
+        // Find the IMAGE_ env var for this short name
+        if let Some(env_var) = comp_cfg.images.get(&short_name) {
+            result.insert(env_var.clone(), pullspec);
+        } else {
+            eprintln!("  WARNING: No IMAGE_ mapping for {}", short_name);
+        }
+    }
+
+    Ok(result)
+}
 
 /// Clone a git repository (shallow, depth 1) into the given destination directory.
 pub fn clone_repo(repo_url: &str, dest: &Path) -> Result<()> {

@@ -132,16 +132,39 @@ pub fn push_to_external(image_ref: &str, target_registry: &str) -> Result<String
     let dest = format!("docker://{}/{}", target_registry, image_name);
     let src = format!("docker://{}", image_ref);
 
-    let _result = exec::run_cmd(
-        "skopeo",
-        &["copy", "--all", &src, &dest],
-    )?;
+    // Find auth file - try Docker config first, then containers auth
+    let home = std::env::var("HOME").unwrap_or_default();
+    let docker_config = format!("{}/.docker/config.json", home);
+    let containers_auth = format!("{}/.config/containers/auth.json", home);
+
+    let auth_file = if std::path::Path::new(&docker_config).exists() {
+        Some(docker_config)
+    } else if std::path::Path::new(&containers_auth).exists() {
+        Some(containers_auth)
+    } else {
+        None
+    };
+
+    // Build skopeo command with auth and source TLS skip (for internal registry)
+    let mut args = vec!["copy", "--all", "--src-tls-verify=false"];
+    if let Some(ref auth) = auth_file {
+        args.push("--authfile");
+        args.push(auth);
+    }
+    args.push(&src);
+    args.push(&dest);
+
+    let _result = exec::run_cmd("skopeo", &args)?;
 
     // Get the digest of the pushed image via skopeo inspect
-    let inspect_result = exec::run_cmd(
-        "skopeo",
-        &["inspect", "--format", "{{.Digest}}", &dest],
-    )?;
+    let mut inspect_args = vec!["inspect", "--format", "{{.Digest}}"];
+    if let Some(ref auth) = auth_file {
+        inspect_args.push("--authfile");
+        inspect_args.push(auth);
+    }
+    inspect_args.push(&dest);
+
+    let inspect_result = exec::run_cmd("skopeo", &inspect_args)?;
     let digest = inspect_result.stdout.trim().to_string();
 
     let pinned = format!("{}/{}@{}", target_registry, image_name, digest);

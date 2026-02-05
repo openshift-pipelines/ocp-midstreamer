@@ -493,7 +493,7 @@ async fn main() {
                                         output_dir
                                     );
                                     eprintln!(
-                                        "Run `ocp-midstreamer publish --output-dir {}` to update dashboard.",
+                                        "Run `streamstress publish --output-dir {}` to update dashboard.",
                                         output_dir
                                     );
                                 }
@@ -514,7 +514,7 @@ async fn main() {
                 }
             } else {
                 eprintln!("\nTo trigger the pipeline, run:");
-                eprintln!("  ocp-midstreamer konflux --registry {} --trigger --output-dir {}", registry, output_dir);
+                eprintln!("  streamstress konflux --registry {} --trigger --output-dir {}", registry, output_dir);
                 std::process::exit(0);
             }
         }
@@ -869,7 +869,7 @@ async fn run_perf_tests_standalone(
     };
 
     // Clone performance repo to temp dir
-    let temp_dir = std::env::temp_dir().join("ocp-midstreamer-perf");
+    let temp_dir = std::env::temp_dir().join("streamstress-perf");
     let perf_repo_dir = match perf::clone_perf_repo(&temp_dir, perf_ref) {
         Ok(d) => d,
         Err(e) => {
@@ -1049,10 +1049,12 @@ fn run_batch_historical(
         }
 
         // Execute via subprocess (self-invocation)
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(&args)
-            .arg(if verbose { "--verbose" } else { "" })
-            .status();
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args(&args);
+        if verbose {
+            cmd.arg("--verbose");
+        }
+        let status = cmd.status();
 
         let exit_code = match status {
             Ok(s) => s.code().unwrap_or(2),

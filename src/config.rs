@@ -38,11 +38,11 @@ pub fn load_config(path: &Path) -> anyhow::Result<Config> {
 }
 
 /// Returns the default path to `config/components.toml`.
-/// When running in-cluster (OCP_MIDSTREAMER_INCLUSTER=1), uses /etc/ocp-midstreamer/components.toml.
+/// When running in-cluster (STREAMSTRESS_INCLUSTER=1), uses /etc/streamstress/components.toml.
 /// Otherwise, uses config/components.toml relative to the current directory.
 pub fn default_config_path() -> PathBuf {
-    if std::env::var("OCP_MIDSTREAMER_INCLUSTER").is_ok() {
-        PathBuf::from("/etc/ocp-midstreamer/components.toml")
+    if std::env::var("STREAMSTRESS_INCLUSTER").is_ok() {
+        PathBuf::from("/etc/streamstress/components.toml")
     } else {
         PathBuf::from("config/components.toml")
     }
