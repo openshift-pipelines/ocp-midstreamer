@@ -32,6 +32,11 @@ const TOOLS: &[ToolSpec] = &[
         version_args: &["version"],
         fix_hint: "Install Go from https://go.dev/dl/",
     },
+    ToolSpec {
+        name: "gh",
+        version_args: &["version"],
+        fix_hint: "Install GitHub CLI: brew install gh && gh auth login",
+    },
 ];
 
 pub fn run_check(_verbose: bool) -> Result<bool> {

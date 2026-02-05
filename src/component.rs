@@ -1,4 +1,5 @@
 use anyhow::Result;
+use regex::Regex;
 use std::path::Path;
 use std::process::Command;
 
@@ -10,11 +11,13 @@ pub const KNOWN_COMPONENTS: &[&str] = &[
     "manual-approval-gate", "console-plugin",
 ];
 
-/// A component to build/deploy/test, with an optional git ref override.
+/// A component to build/deploy/test, with an optional git ref or as-of date override.
 #[derive(Debug, Clone)]
 pub struct ComponentSpec {
     pub name: String,
     pub git_ref: Option<String>,
+    /// Date in YYYY-MM-DD format for historical builds. Populated from --as-of flag.
+    pub as_of_date: Option<String>,
 }
 
 /// Parse a comma-separated component spec string.
@@ -44,6 +47,7 @@ pub fn parse_component_specs(input: &str) -> Result<Vec<ComponentSpec>, String> 
         specs.push(ComponentSpec {
             name: name.to_string(),
             git_ref,
+            as_of_date: None, // Populated later from --as-of flag
         });
     }
     if specs.is_empty() {
@@ -59,8 +63,33 @@ pub fn default_specs() -> Vec<ComponentSpec> {
         .map(|name| ComponentSpec {
             name: name.to_string(),
             git_ref: None,
+            as_of_date: None,
         })
         .collect()
+}
+
+/// Apply an as-of date to all component specs that don't have an explicit git_ref.
+///
+/// Components with explicit refs (e.g., "pipeline:v0.50.0") are not modified since
+/// the user specified an explicit version to use.
+pub fn apply_as_of_date(specs: &mut [ComponentSpec], as_of: &str) {
+    for spec in specs {
+        if spec.git_ref.is_none() {
+            spec.as_of_date = Some(as_of.to_string());
+        }
+    }
+}
+
+/// Validate date format is YYYY-MM-DD.
+///
+/// Used by clap's value_parser for the --as-of flag.
+pub fn validate_date_format(s: &str) -> std::result::Result<String, String> {
+    let re = Regex::new(r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$").expect("Invalid regex");
+    if re.is_match(s) {
+        Ok(s.to_string())
+    } else {
+        Err("Date must be in YYYY-MM-DD format (e.g., 2024-01-15)".to_string())
+    }
 }
 
 /// Resolve a user-provided git ref to a fetchable refspec.
