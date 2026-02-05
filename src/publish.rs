@@ -18,6 +18,24 @@ pub fn publish(output_dir: &str, remote: Option<&str>, label: Option<&str>) -> R
     let mut run_data: serde_json::Value =
         serde_json::from_str(&results_str).context("Failed to parse results JSON")?;
 
+    // 1b. Check for metadata.json (as-of date tracking)
+    let metadata_path = Path::new(output_dir).join("results/metadata.json");
+    if metadata_path.exists() {
+        if let Ok(meta_str) = fs::read_to_string(&metadata_path) {
+            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
+                // Merge as_of_date into run data
+                if let Some(as_of) = meta.get("as_of_date") {
+                    run_data["as_of_date"] = as_of.clone();
+                    eprintln!("Including as_of_date: {} in run data", as_of);
+                }
+                // Merge resolved_components into run data
+                if let Some(components) = meta.get("resolved_components") {
+                    run_data["component_refs"] = components.clone();
+                }
+            }
+        }
+    }
+
     // 2. Generate run metadata
     let timestamp = chrono_utc_now();
     let run_id = format!("run-{}", timestamp.replace([':', '-', 'T'], "").replace('Z', ""));

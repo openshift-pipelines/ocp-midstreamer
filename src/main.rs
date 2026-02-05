@@ -173,7 +173,7 @@ async fn main() {
 
             if skip_build {
                 // In-cluster mode: skip clone/build, go straight to deploy+test
-                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup).await;
+                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
                 // Publish results directly to gh-pages if configured
                 callback::maybe_publish_results();
                 std::process::exit(exit_code);
@@ -181,7 +181,7 @@ async fn main() {
 
             if incluster::is_incluster() {
                 // Already in-cluster: run deploy+test directly (don't re-wrap)
-                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup).await;
+                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
                 // Publish results directly to gh-pages if configured
                 callback::maybe_publish_results();
                 std::process::exit(exit_code);
@@ -515,6 +515,7 @@ async fn run_deploy_and_test(
     verbose: bool,
     profile: bool,
     no_auto_setup: bool,
+    as_of: Option<&str>,
 ) -> i32 {
     if !no_auto_setup {
         let result = tokio::task::spawn_blocking(|| {
@@ -571,12 +572,57 @@ async fn run_deploy_and_test(
 
     // Test phase
     eprintln!("\n=== Running tests (in-cluster) ===");
-    match test::run_tests(tags, release_tests_ref, std::path::Path::new(output_dir), verbose, profile).await {
+    let test_result = test::run_tests(tags, release_tests_ref, std::path::Path::new(output_dir), verbose, profile).await;
+
+    // Write as-of metadata for dashboard tracking if --as-of was used
+    if let Some(date) = as_of {
+        write_as_of_metadata(output_dir, date, specs);
+    }
+
+    match test_result {
         Ok(true) => 0,
         Ok(false) => 1,
         Err(e) => {
             eprintln!("Error running tests: {e:#}");
             1
+        }
+    }
+}
+
+/// Write as-of metadata file for dashboard tracking.
+///
+/// Creates `results/metadata.json` with as_of_date and resolved component refs.
+/// This is read by the publish command to include in run data.
+fn write_as_of_metadata(output_dir: &str, as_of: &str, specs: &[component::ComponentSpec]) {
+    let output_path = std::path::Path::new(output_dir);
+    let results_dir = output_path.join("results");
+    if std::fs::create_dir_all(&results_dir).is_err() {
+        eprintln!("WARNING: Could not create results directory for metadata");
+        return;
+    }
+
+    let meta_path = results_dir.join("metadata.json");
+    let meta = serde_json::json!({
+        "as_of_date": as_of,
+        "resolved_components": specs.iter().map(|s| {
+            serde_json::json!({
+                "name": s.name,
+                "git_ref": s.git_ref.as_deref().unwrap_or("HEAD"),
+                "as_of_date": s.as_of_date
+            })
+        }).collect::<Vec<_>>()
+    });
+
+    match serde_json::to_string_pretty(&meta) {
+        Ok(json_str) => {
+            if let Err(e) = std::fs::write(&meta_path, json_str) {
+                eprintln!("WARNING: Could not write metadata.json: {e}");
+            } else {
+                eprintln!("Wrote as-of metadata to {}", meta_path.display());
+            }
+        }
+        Err(e) => {
+            eprintln!("WARNING: Could not serialize metadata: {e}");
         }
     }
 }
