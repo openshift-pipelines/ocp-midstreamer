@@ -36,6 +36,28 @@ pub fn publish(output_dir: &str, remote: Option<&str>, label: Option<&str>) -> R
         }
     }
 
+    // 1c. Check for performance results (perf/perf-results.json)
+    let perf_results_path = Path::new(output_dir).join("perf/perf-results.json");
+    if perf_results_path.exists() {
+        if let Ok(perf_str) = fs::read_to_string(&perf_results_path) {
+            if let Ok(perf_data) = serde_json::from_str::<serde_json::Value>(&perf_str) {
+                run_data["performance"] = perf_data;
+                eprintln!("Including performance test results in run data");
+            }
+        }
+    }
+
+    // 1d. Check for performance resource profile (perf/resource-profile.json)
+    let perf_resource_path = Path::new(output_dir).join("perf/resource-profile.json");
+    if perf_resource_path.exists() {
+        if let Ok(resource_str) = fs::read_to_string(&perf_resource_path) {
+            if let Ok(resource_data) = serde_json::from_str::<serde_json::Value>(&resource_str) {
+                run_data["performance_resources"] = resource_data;
+                eprintln!("Including performance resource profile in run data");
+            }
+        }
+    }
+
     // 2. Generate run metadata
     let timestamp = chrono_utc_now();
     let run_id = format!("run-{}", timestamp.replace([':', '-', 'T'], "").replace('Z', ""));
