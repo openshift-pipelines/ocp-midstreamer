@@ -145,6 +145,9 @@ async fn main() {
             registry,
             skip_build,
             profile,
+            perf,
+            perf_scenario,
+            perf_ref,
         } => {
             let mut specs = match components {
                 Some(ref s) => match component::parse_component_specs(s) {

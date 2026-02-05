@@ -116,6 +116,21 @@ pub enum Commands {
         /// Collect per-spec resource usage metrics during test execution
         #[arg(long)]
         profile: bool,
+
+        /// Run performance tests from openshift-pipelines/performance repo.
+        /// Can be combined with functional tests or run standalone.
+        #[arg(long)]
+        perf: bool,
+
+        /// Performance test scenario to run (default: math).
+        /// Options: math, build, signing-ongoing, cluster-resolver
+        #[arg(long, default_value = "math", requires = "perf")]
+        perf_scenario: String,
+
+        /// Git ref for performance repo (branch/tag/commit).
+        /// Defaults to main.
+        #[arg(long)]
+        perf_ref: Option<String>,
     },
 
     /// Re-analyze test results from a previous run
