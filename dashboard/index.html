@@ -10,8 +10,14 @@
 <body>
   <header>
     <h1>OCP Midstreamer Test Dashboard</h1>
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="runs">Runs</button>
+      <button class="tab-btn" data-tab="timeline">Timeline</button>
+    </nav>
   </header>
 
+  <!-- Runs Tab Content -->
+  <div id="runs-view" class="tab-content">
   <div id="filters">
     <select id="filter-category">
       <option value="">All Categories</option>
@@ -44,7 +50,40 @@
   <div id="run-tables"></div>
 
   <div id="detail-panel" class="hidden"></div>
+  </div><!-- end runs-view -->
+
+  <!-- Timeline Tab Content -->
+  <div id="timeline-view" class="tab-content" style="display: none;">
+    <div class="timeline-controls">
+      <div class="date-range-selector">
+        <label>Date Range:</label>
+        <input type="date" id="timeline-start" />
+        <span>to</span>
+        <input type="date" id="timeline-end" />
+        <button id="apply-date-range" class="btn-primary">Apply</button>
+      </div>
+      <div class="timeline-options">
+        <label><input type="checkbox" id="show-perf-overlay" /> Show Performance</label>
+        <label><input type="checkbox" id="show-resources" /> Show Resources</label>
+        <label><input type="checkbox" id="highlight-regressions" checked /> Highlight Regressions</label>
+      </div>
+      <button id="export-timeline-csv" class="btn-secondary">Export CSV</button>
+    </div>
+
+    <div class="timeline-chart-container">
+      <div id="timeline-chart"></div>
+      <div id="timeline-legend"></div>
+    </div>
+
+    <div id="timeline-detail-panel" class="detail-panel" style="display: none;">
+      <h3>Run Details: <span id="detail-date"></span></h3>
+      <div id="detail-commit-info"></div>
+      <div id="detail-test-summary"></div>
+      <div id="detail-perf-metrics"></div>
+    </div>
+  </div>
 
   <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/timeline.js"></script>
 </body>
 </html>
