@@ -191,6 +191,7 @@ pub async fn create_job(
                     "containers": [{
                         "name": "streamstress",
                         "image": image_ref,
+                        "imagePullPolicy": "Always",
                         "args": args_json,
                         "env": env_vars
                     }]
