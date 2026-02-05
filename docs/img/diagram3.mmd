@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> CheckJob: Workflow triggered
+    CheckJob --> LaunchNew: No Job / Failed Job
+    CheckJob --> ExitRunning: Job still running
+    CheckJob --> CopyResults: Job succeeded
+
+    LaunchNew --> BuildImages: cargo build + ko build
+    BuildImages --> CreateJob: Create in-cluster Job
+    CreateJob --> SummaryLaunched: Write Job launched summary
+    SummaryLaunched --> [*]
+
+    ExitRunning --> SummaryInProgress: Write in progress summary
+    SummaryInProgress --> [*]
+
+    CopyResults --> OcCp: oc cp from pod
+    OcCp --> Publish: publish to gh-pages
+    Publish --> SummaryPublished: Write results published summary
+    SummaryPublished --> [*]

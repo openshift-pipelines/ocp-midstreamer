@@ -1,0 +1,34 @@
+flowchart LR
+    subgraph Upstream["Upstream Tekton"]
+        P[tektoncd/pipeline]
+        T[tektoncd/triggers]
+        C[tektoncd/chains]
+        R[tektoncd/results]
+    end
+
+    subgraph Build["Build Phase"]
+        KO["ko build\n(parallel)"]
+    end
+
+    subgraph Cluster["OpenShift Cluster"]
+        REG["Internal Registry\nsvc:5000"]
+        CSV["Patch Operator CSV\nwith IMAGE_* env vars"]
+        OLM["OLM Reconciles\nPods restart"]
+        TEST["Run release-tests\n(Gauge e2e)"]
+    end
+
+    subgraph Output["Output"]
+        JSON["results.json\n(categorized)"]
+        DASH["GitHub Pages\nDashboard"]
+    end
+
+    P --> KO
+    T --> KO
+    C --> KO
+    R --> KO
+    KO --> REG
+    REG --> CSV
+    CSV --> OLM
+    OLM --> TEST
+    TEST --> JSON
+    JSON --> DASH
