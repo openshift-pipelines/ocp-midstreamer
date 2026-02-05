@@ -58,7 +58,7 @@ async fn main() {
                 }
             }
         }
-        Commands::Build { component, registry } => {
+        Commands::Build { component, registry, as_of: _ } => {
             if !cli.no_auto_setup {
                 let result = tokio::task::spawn_blocking(|| {
                     setup::run_auto_setup()
@@ -134,6 +134,7 @@ async fn main() {
         }
         Commands::Run {
             components,
+            as_of,
             dry_run,
             json,
             tags,
@@ -246,6 +247,7 @@ async fn main() {
             output_dir,
             components,
             refs,
+            as_of,
             trigger,
             pipeline_namespace,
             timeout,

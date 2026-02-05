@@ -36,6 +36,11 @@ pub enum Commands {
         /// When omitted, images stay in the OCP internal registry.
         #[arg(long)]
         registry: Option<String>,
+
+        /// Build component as it existed on this date (YYYY-MM-DD).
+        /// Resolves to the last commit before end-of-day UTC.
+        #[arg(long, value_parser = crate::component::validate_date_format)]
+        as_of: Option<String>,
     },
 
     /// Deploy upstream-built images to the OpenShift Pipelines operator
@@ -73,6 +78,12 @@ pub enum Commands {
         /// Components to process (e.g. "pipeline,triggers" or "pipeline:pr/123,triggers:v0.28.0")
         #[arg(long)]
         components: Option<String>,
+
+        /// Build/test components as they existed on this date (YYYY-MM-DD).
+        /// Components with explicit refs (e.g. pipeline:v0.50.0) ignore this.
+        /// Resolves to the last commit before end-of-day UTC.
+        #[arg(long, value_parser = crate::component::validate_date_format)]
+        as_of: Option<String>,
 
         /// Print the execution plan without building, deploying, or testing
         #[arg(long)]
@@ -145,6 +156,11 @@ pub enum Commands {
         /// Git refs for components (e.g. "pipeline:pr/123,triggers:v0.28.0")
         #[arg(long)]
         refs: Option<String>,
+
+        /// Build components as they existed on this date (YYYY-MM-DD).
+        /// Components with explicit refs ignore this.
+        #[arg(long, value_parser = crate::component::validate_date_format)]
+        as_of: Option<String>,
 
         /// After generating SNAPSHOT, trigger the standalone release-test-pipeline
         #[arg(long)]
