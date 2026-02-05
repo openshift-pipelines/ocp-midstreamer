@@ -1,5 +1,9 @@
 # streamstress
 
+<p align="center">
+  <img src="docs/img/streamstress-logo.png" alt="Streamstress - I'll haz all the streams" width="300">
+</p>
+
 Detect upstream Tekton changes that break OpenShift Pipelines — before they reach the midstream.
 
 `streamstress` is a Rust CLI that builds upstream Tekton components from source, swaps the resulting images into a live OpenShift Pipelines operator deployment, and runs the [release-tests](https://github.com/openshift-pipelines/release-tests) suite to catch regressions early.
