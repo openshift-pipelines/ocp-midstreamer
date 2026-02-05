@@ -1,4 +1,4 @@
-name: Midstreamer Run
+name: Streamstress Run
 
 on:
   workflow_dispatch:
@@ -90,7 +90,7 @@ jobs:
           echo "Server: $(oc whoami --show-server)"
 
       - name: Auto-setup cluster prerequisites
-        run: ./target/release/ocp-midstreamer check --fix
+        run: ./target/release/streamstress check --fix
 
       - name: Login to OCP registry
         run: |
@@ -108,13 +108,13 @@ jobs:
         run: |
           set -euo pipefail
           NS="openshift-pipelines"
-          # Find most recent midstreamer Job
-          JOB_NAME=$(oc get jobs -n "$NS" -l app=ocp-midstreamer \
+          # Find most recent streamstress Job
+          JOB_NAME=$(oc get jobs -n "$NS" -l app=streamstress \
             --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)
 
           if [ -z "$JOB_NAME" ]; then
             echo "status=none" >> "$GITHUB_OUTPUT"
-            echo "No existing midstreamer Jobs found."
+            echo "No existing streamstress Jobs found."
             exit 0
           fi
 
@@ -152,20 +152,30 @@ jobs:
           echo "Results copied. Contents:"
           find ./test-output -type f | head -20
 
-      - name: Run midstreamer
+      - name: Run streamstress
         if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
+        env:
+          # Publish env vars - passed to in-cluster Job for direct gh-pages push
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_LABEL: "CI run: ${{ inputs.components }}"
+          OUTPUT_DIR: /test-output
+          # CLI inputs
+          COMPONENTS: ${{ inputs.components }}
+          RELEASE_TESTS_REF: ${{ inputs.release_tests_ref }}
+          CLI_FLAGS: ${{ inputs.cli_flags }}
         run: |
           set -euo pipefail
-          ./target/release/ocp-midstreamer run \
-            --components "${{ inputs.components }}" \
-            --release-tests-ref "${{ inputs.release_tests_ref }}" \
-            ${{ inputs.cli_flags }}
+          ./target/release/streamstress run \
+            --components "$COMPONENTS" \
+            --release-tests-ref "$RELEASE_TESTS_REF" \
+            $CLI_FLAGS
 
       - name: Write summary (Job running)
         if: steps.check-job.outputs.status == 'running'
         run: |
           JOB_NAME="${{ steps.check-job.outputs.job_name }}"
-          echo "## ⏳ Midstreamer Job In Progress" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ⏳ Streamstress Job In Progress" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Job:** \`$JOB_NAME\`" >> "$GITHUB_STEP_SUMMARY"
           echo "**Namespace:** \`openshift-pipelines\`" >> "$GITHUB_STEP_SUMMARY"
@@ -182,21 +192,28 @@ jobs:
 
       - name: Write summary (Job just launched)
         if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
+        env:
+          CLUSTER_URL: ${{ inputs.cluster_api_url }}
+          COMPONENTS: ${{ inputs.components }}
         run: |
-          echo "## 🚀 Midstreamer Job Launched" >> "$GITHUB_STEP_SUMMARY"
+          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          echo "## 🚀 Streamstress Job Launched" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Components:** $COMPONENTS" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Cluster:** $CLUSTER_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Auto-publish:** ✅ Enabled (callback configured)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### What Happens Next" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Tests run in-cluster (~2.5 hrs)" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. When complete, Job triggers **publish.yml** workflow automatically" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. Results published to [Dashboard]($PAGES_URL)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### View Logs" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "ocp-midstreamer logs" >> "$GITHUB_STEP_SUMMARY"
+          echo "streamstress logs" >> "$GITHUB_STEP_SUMMARY"
           echo "# or" >> "$GITHUB_STEP_SUMMARY"
-          echo "oc logs -f \$(oc get pods -n openshift-pipelines -l app=ocp-midstreamer --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
+          echo "oc logs -f \$(oc get pods -n openshift-pipelines -l app=streamstress --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
-          echo "Re-run this workflow after the Job completes (~2.5 hrs) to copy results and publish the dashboard." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure git for publish
         if: steps.check-job.outputs.status == 'succeeded'
@@ -211,14 +228,14 @@ jobs:
         if: steps.check-job.outputs.status == 'succeeded'
         run: |
           set -euo pipefail
-          ./target/release/ocp-midstreamer publish \
+          ./target/release/streamstress publish \
             --label "CI run: ${{ inputs.components }}"
 
       - name: Write summary (results published)
         if: steps.check-job.outputs.status == 'succeeded'
         run: |
           PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
-          echo "## ✅ Midstreamer Results Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ✅ Streamstress Results Published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
