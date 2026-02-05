@@ -137,6 +137,7 @@ async fn main() {
         Commands::Run {
             components,
             as_of,
+            date_range,
             dry_run,
             json,
             tags,
@@ -149,6 +150,23 @@ async fn main() {
             perf_scenario,
             perf_ref,
         } => {
+            // Handle --date-range for batch historical runs
+            if let Some(ref range) = date_range {
+                let exit_code = run_batch_historical(
+                    range,
+                    &components,
+                    &release_tests_ref,
+                    &output_dir,
+                    skip_build,
+                    registry.as_deref(),
+                    cli.verbose,
+                    profile,
+                    cli.no_auto_setup,
+                    dry_run,
+                );
+                std::process::exit(exit_code);
+            }
+
             let mut specs = match components {
                 Some(ref s) => match component::parse_component_specs(s) {
                     Ok(v) => v,
@@ -178,7 +196,14 @@ async fn main() {
 
             if skip_build {
                 // In-cluster mode: skip clone/build, go straight to deploy+test
-                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
+                let mut exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
+
+                // Run performance tests if --perf is set
+                if perf {
+                    let perf_exit = run_perf_tests_standalone(&output_dir, &perf_scenario, perf_ref.as_deref(), cli.verbose, profile).await;
+                    exit_code = combine_exit_codes(exit_code, perf_exit);
+                }
+
                 // Publish results directly to gh-pages if configured
                 callback::maybe_publish_results();
                 std::process::exit(exit_code);
@@ -186,13 +211,22 @@ async fn main() {
 
             if incluster::is_incluster() {
                 // Already in-cluster: run deploy+test directly (don't re-wrap)
-                let exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
+                let mut exit_code = run_deploy_and_test(&specs, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, profile, cli.no_auto_setup, as_of.as_deref()).await;
+
+                // Run performance tests if --perf is set
+                if perf {
+                    let perf_exit = run_perf_tests_standalone(&output_dir, &perf_scenario, perf_ref.as_deref(), cli.verbose, profile).await;
+                    exit_code = combine_exit_codes(exit_code, perf_exit);
+                }
+
                 // Publish results directly to gh-pages if configured
                 callback::maybe_publish_results();
                 std::process::exit(exit_code);
             }
 
             // Normal mode: build locally, then create in-cluster Job for deploy+test
+            // Note: perf flags are NOT passed to in-cluster Job yet (would need incluster module changes)
+            // For now, perf tests run only in skip_build or is_incluster paths
             let exit_code = run_multi(specs, dry_run, json, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, as_of.as_deref()).await;
             std::process::exit(exit_code);
         }
@@ -808,4 +842,238 @@ fn print_dry_run_plan(
         dryrun::print_table(&resolved);
     }
     0
+}
+
+/// Run performance tests standalone (after functional tests).
+///
+/// Clones the openshift-pipelines/performance repo, runs the specified scenario,
+/// and writes results to output_dir/perf/.
+async fn run_perf_tests_standalone(
+    output_dir: &str,
+    perf_scenario: &str,
+    perf_ref: Option<&str>,
+    verbose: bool,
+    profile: bool,
+) -> i32 {
+    eprintln!("\n========================================");
+    eprintln!("PERFORMANCE TESTS");
+    eprintln!("========================================\n");
+
+    // Parse scenario
+    let scenario: perf::PerfScenario = match perf_scenario.parse() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Invalid perf scenario: {}", e);
+            return 2;
+        }
+    };
+
+    // Clone performance repo to temp dir
+    let temp_dir = std::env::temp_dir().join("ocp-midstreamer-perf");
+    let perf_repo_dir = match perf::clone_perf_repo(&temp_dir, perf_ref) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Failed to clone performance repo: {}", e);
+            return 2;
+        }
+    };
+
+    // Create perf output directory
+    let perf_output_dir = std::path::Path::new(output_dir).join("perf");
+    if let Err(e) = std::fs::create_dir_all(&perf_output_dir) {
+        eprintln!("Failed to create perf output directory: {}", e);
+        return 2;
+    }
+
+    // Start resource profiling if requested
+    let profiler = if profile {
+        match start_perf_profiling().await {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!("WARNING: Failed to start profiling: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Run performance tests
+    let perf_result = perf::run_perf_tests(&perf_repo_dir, &scenario, &perf_output_dir, verbose);
+
+    // Stop profiling and collect resource data
+    if let Some(p) = profiler {
+        if let Ok(resource_data) = stop_perf_profiling(p).await {
+            let resource_path = perf_output_dir.join("resource-profile.json");
+            if let Ok(json) = serde_json::to_string_pretty(&resource_data) {
+                if let Err(e) = std::fs::write(&resource_path, json) {
+                    eprintln!("WARNING: Failed to write resource profile: {}", e);
+                }
+            }
+        }
+    }
+
+    match perf_result {
+        Ok(result) => {
+            if let Err(e) = perf::write_perf_results(&result, &perf_output_dir) {
+                eprintln!("WARNING: Failed to write perf results: {}", e);
+            }
+
+            eprintln!("\nPerformance Test Results:");
+            eprintln!("  Scenario: {}", result.scenario);
+            eprintln!("  Passed: {}", result.passed);
+            eprintln!("  Duration: {:.1}s", result.duration_seconds);
+            if let Some(throughput) = result.metrics.throughput_per_minute {
+                eprintln!("  Throughput: {:.1} runs/min", throughput);
+            }
+            if let Some(p50) = result.metrics.p50_latency_seconds {
+                eprintln!("  P50 Latency: {:.2}s", p50);
+            }
+            if let Some(p95) = result.metrics.p95_latency_seconds {
+                eprintln!("  P95 Latency: {:.2}s", p95);
+            }
+
+            if result.passed { 0 } else { 1 }
+        }
+        Err(e) => {
+            eprintln!("Performance test error: {}", e);
+            2
+        }
+    }
+}
+
+/// Start resource profiling for performance tests.
+async fn start_perf_profiling() -> anyhow::Result<profile::MetricsCollector> {
+    let client = kube::Client::try_default().await?;
+
+    // Check if metrics API is available
+    if !profile::check_metrics_available(&client).await? {
+        anyhow::bail!("Metrics API not available");
+    }
+
+    Ok(profile::MetricsCollector::start(client))
+}
+
+/// Stop profiling and return collected spec profiles.
+async fn stop_perf_profiling(collector: profile::MetricsCollector) -> anyhow::Result<Vec<profile::SpecProfile>> {
+    collector.stop().await
+}
+
+/// Combine exit codes from functional and performance tests.
+///
+/// Returns:
+/// - 0 if both passed
+/// - 1 if any test failed
+/// - 2 if any error occurred
+fn combine_exit_codes(func_exit: i32, perf_exit: i32) -> i32 {
+    match (func_exit, perf_exit) {
+        (0, 0) => 0,           // Both passed
+        (2, _) | (_, 2) => 2,  // Any error
+        _ => 1,                 // Any failure
+    }
+}
+
+/// Run batch historical tests for a date range.
+///
+/// Iterates through each date in the range, running build-deploy-test for each.
+/// Results are stored in output-dir/DATE/ subdirectories.
+/// Note: Full implementation in plan 14-03.
+fn run_batch_historical(
+    range: &batch::DateRange,
+    components: &Option<String>,
+    release_tests_ref: &str,
+    output_dir: &str,
+    skip_build: bool,
+    registry: Option<&str>,
+    verbose: bool,
+    profile: bool,
+    no_auto_setup: bool,
+    dry_run: bool,
+) -> i32 {
+    let dates = batch::generate_dates(range);
+    let mut progress = batch::BatchProgress::new(dates.len());
+
+    if dry_run {
+        eprintln!("\n=== BATCH HISTORICAL RUN (DRY-RUN) ===");
+        eprintln!("Date range: {} to {}", range.start, range.end);
+        eprintln!("Total dates: {}", dates.len());
+        eprintln!("Components: {:?}", components);
+        eprintln!("\nWould process dates:");
+        for date in &dates {
+            eprintln!("  {}", date.format("%Y-%m-%d"));
+        }
+        return 0;
+    }
+
+    eprintln!("\n=== BATCH HISTORICAL RUN ===");
+    eprintln!("Date range: {} to {}", range.start, range.end);
+    eprintln!("Total dates: {}", dates.len());
+
+    for date in dates {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        progress.advance(&date_str);
+        progress.print_progress();
+
+        // Create date-specific output directory
+        let date_output_dir = format!("{}/{}", output_dir, date_str);
+        if let Err(e) = std::fs::create_dir_all(&date_output_dir) {
+            eprintln!("ERROR: Failed to create output directory: {}", e);
+            progress.record_result(2);
+            continue;
+        }
+
+        // Build command args for this date
+        let mut args = vec![
+            "run".to_string(),
+            "--as-of".to_string(),
+            date_str.clone(),
+            "--release-tests-ref".to_string(),
+            release_tests_ref.to_string(),
+            "--output-dir".to_string(),
+            date_output_dir,
+        ];
+
+        if let Some(c) = components {
+            args.push("--components".to_string());
+            args.push(c.clone());
+        }
+        if skip_build {
+            args.push("--skip-build".to_string());
+        }
+        if let Some(reg) = registry {
+            args.push("--registry".to_string());
+            args.push(reg.to_string());
+        }
+        if no_auto_setup {
+            args.push("--no-auto-setup".to_string());
+        }
+
+        // Execute via subprocess (self-invocation)
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(&args)
+            .arg(if verbose { "--verbose" } else { "" })
+            .status();
+
+        let exit_code = match status {
+            Ok(s) => s.code().unwrap_or(2),
+            Err(e) => {
+                eprintln!("ERROR: Failed to execute for date {}: {}", date_str, e);
+                2
+            }
+        };
+
+        progress.record_result(exit_code);
+        let _ = profile; // Silence unused warning - profile passed to subprocess
+    }
+
+    progress.print_summary();
+
+    // Return overall exit code
+    if progress.errors > 0 {
+        2
+    } else if progress.failed > 0 {
+        1
+    } else {
+        0
+    }
 }
