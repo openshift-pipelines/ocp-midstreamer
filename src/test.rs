@@ -160,7 +160,38 @@ fn run_gauge_tests(test_dir: &Path, tags: &str, output_dir: &Path, profiler: Opt
     fs::write(logs_dir.join("test-stderr.log"), &stderr_content)
         .context("Failed to write test-stderr.log")?;
 
-    Ok(status.code().unwrap_or(-1))
+    // If gauge failed, dump its internal logs for diagnostics
+    let exit_code = status.code().unwrap_or(-1);
+    if exit_code != 0 {
+        let gauge_log = test_dir.join("logs").join("gauge.log");
+        if gauge_log.exists() {
+            if let Ok(content) = fs::read_to_string(&gauge_log) {
+                eprintln!("\n=== Gauge internal log ({}) ===", gauge_log.display());
+                // Print last 80 lines to avoid flooding
+                let lines: Vec<&str> = content.lines().collect();
+                let start = lines.len().saturating_sub(80);
+                for line in &lines[start..] {
+                    eprintln!("{}", line);
+                }
+                eprintln!("=== End gauge log ===\n");
+            }
+        }
+        // Also check for gauge's Go runner log
+        let go_runner_log = test_dir.join("logs").join("gauge-go.log");
+        if go_runner_log.exists() {
+            if let Ok(content) = fs::read_to_string(&go_runner_log) {
+                eprintln!("\n=== Gauge Go runner log ===");
+                let lines: Vec<&str> = content.lines().collect();
+                let start = lines.len().saturating_sub(40);
+                for line in &lines[start..] {
+                    eprintln!("{}", line);
+                }
+                eprintln!("=== End Go runner log ===\n");
+            }
+        }
+    }
+
+    Ok(exit_code)
 }
 
 /// Find the JUnit XML report file in gauge's output directory.
@@ -231,20 +262,30 @@ pub async fn run_tests(tags: &str, release_tests_ref: &str, output_dir: &Path, _
     let test_dir = clone_release_tests(temp_dir.path(), release_tests_ref)?;
     progress::finish_spinner(&pb, true);
 
+    // Print Go environment for diagnostics
+    if let Ok(output) = Command::new("go").args(["version"]).output() {
+        eprintln!("Go: {}", String::from_utf8_lossy(&output.stdout).trim());
+    }
+
     // Pre-compile Go step implementations to warm build cache and catch errors before gauge.
     // Without this, gauge's Go runner compiles from scratch and crashes opaquely on failure.
     let pb = progress::stage_spinner("Pre-compiling Go test dependencies");
     let go_build = Command::new("go")
-        .args(["build", "./..."])
+        .args(["build", "-v", "./..."])
         .current_dir(&test_dir)
         .output();
-    match go_build {
+    match &go_build {
         Ok(output) if !output.status.success() => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             eprintln!("Warning: Go pre-compilation failed:\n{}", stderr);
         }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stderr.is_empty() {
+                eprintln!("Go build output:\n{}", stderr);
+            }
+        }
         Err(e) => eprintln!("Warning: Go pre-compilation skipped: {}", e),
-        _ => {}
     }
     progress::finish_spinner(&pb, true);
 
