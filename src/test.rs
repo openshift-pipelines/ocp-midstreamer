@@ -231,6 +231,23 @@ pub async fn run_tests(tags: &str, release_tests_ref: &str, output_dir: &Path, _
     let test_dir = clone_release_tests(temp_dir.path(), release_tests_ref)?;
     progress::finish_spinner(&pb, true);
 
+    // Pre-compile Go step implementations to warm build cache and catch errors before gauge.
+    // Without this, gauge's Go runner compiles from scratch and crashes opaquely on failure.
+    let pb = progress::stage_spinner("Pre-compiling Go test dependencies");
+    let go_build = Command::new("go")
+        .args(["build", "./..."])
+        .current_dir(&test_dir)
+        .output();
+    match go_build {
+        Ok(output) if !output.status.success() => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Warning: Go pre-compilation failed:\n{}", stderr);
+        }
+        Err(e) => eprintln!("Warning: Go pre-compilation skipped: {}", e),
+        _ => {}
+    }
+    progress::finish_spinner(&pb, true);
+
     // Stage 2.5: Set up profiler if requested
     let mut profiling_ctx: Option<(kube::Client, profile::ClusterCapacity, profile::ResourceSnapshot, Arc<profile::MetricsCollector>)> = None;
 

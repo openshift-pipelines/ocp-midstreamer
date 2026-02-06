@@ -33,10 +33,10 @@ RUN wget -q https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/ope
     && tar xzf openshift-client-linux.tar.gz -C /usr/local/bin oc kubectl \
     && rm -f openshift-client-linux.tar.gz
 
-# Install Go
-RUN wget -q https://go.dev/dl/go1.22.5.linux-amd64.tar.gz \
-    && tar xzf go1.22.5.linux-amd64.tar.gz -C /usr/local \
-    && rm -f go1.22.5.linux-amd64.tar.gz
+# Install Go (must match release-tests go.mod toolchain to avoid runtime GOTOOLCHAIN download)
+RUN wget -q https://go.dev/dl/go1.24.13.linux-amd64.tar.gz \
+    && tar xzf go1.24.13.linux-amd64.tar.gz -C /usr/local \
+    && rm -f go1.24.13.linux-amd64.tar.gz
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 # Install ko
