@@ -38,10 +38,20 @@ struct JUnitTestCase {
     #[serde(rename = "@time", default)]
     time: f64,
     failure: Option<JUnitFailure>,
+    error: Option<JUnitError>,
 }
 
 #[derive(Debug, Deserialize)]
 struct JUnitFailure {
+    #[serde(rename = "@message", default)]
+    message: String,
+    #[serde(rename = "$text")]
+    #[allow(dead_code)]
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JUnitError {
     #[serde(rename = "@message", default)]
     message: String,
     #[serde(rename = "$text")]
@@ -360,8 +370,9 @@ pub fn parse_junit_xml(xml_path: &Path) -> Result<TestRunResult> {
 
     for suite in &suites.suites {
         for tc in &suite.testcases {
-            let passed = tc.failure.is_none();
-            let error_message = tc.failure.as_ref().map(|f| f.message.clone());
+            let passed = tc.failure.is_none() && tc.error.is_none();
+            let error_message = tc.failure.as_ref().map(|f| f.message.clone())
+                .or_else(|| tc.error.as_ref().map(|e| e.message.clone()));
             total_duration += tc.time;
 
             tests.push(TestCaseResult {

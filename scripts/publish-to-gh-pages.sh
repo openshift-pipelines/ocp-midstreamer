@@ -2,6 +2,10 @@
 # Publish test results to gh-pages branch with full dashboard.
 # This script runs AFTER streamstress completes in the Job pod.
 #
+# Supports two modes:
+#   1. Single run: OUTPUT_DIR/results/results.json exists
+#   2. Batch run:  OUTPUT_DIR/YYYY-MM-DD/results/results.json (date subdirs)
+#
 # Required env vars:
 #   GITHUB_TOKEN      - Token with repo write access
 #   GITHUB_REPOSITORY - org/repo format
@@ -21,7 +25,6 @@ fi
 
 OUTPUT_DIR="${OUTPUT_DIR:-/test-output}"
 RUN_LABEL="${RUN_LABEL:-CI run}"
-RESULTS_FILE="$OUTPUT_DIR/results/results.json"
 
 # Find dashboard directory
 if [ -n "${DASHBOARD_DIR:-}" ] && [ -d "$DASHBOARD_DIR" ]; then
@@ -34,12 +37,27 @@ else
     DASHBOARD_SRC=""
 fi
 
-if [ ! -f "$RESULTS_FILE" ]; then
-    echo "Publish skipped: No results file at $RESULTS_FILE"
+# Collect all results files to publish
+RESULTS_FILES=()
+
+if [ -f "$OUTPUT_DIR/results/results.json" ]; then
+    # Single run mode
+    RESULTS_FILES+=("$OUTPUT_DIR/results/results.json")
+else
+    # Batch mode: scan for date subdirectories (YYYY-MM-DD pattern)
+    for date_dir in "$OUTPUT_DIR"/????-??-??; do
+        if [ -d "$date_dir" ] && [ -f "$date_dir/results/results.json" ]; then
+            RESULTS_FILES+=("$date_dir/results/results.json")
+        fi
+    done
+fi
+
+if [ ${#RESULTS_FILES[@]} -eq 0 ]; then
+    echo "Publish skipped: No results files found in $OUTPUT_DIR"
     exit 0
 fi
 
-echo "=== Publishing results to gh-pages ==="
+echo "=== Publishing ${#RESULTS_FILES[@]} result(s) to gh-pages ==="
 
 REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 WORK_DIR=$(mktemp -d)
@@ -71,49 +89,84 @@ fi
 # Create runs directory
 mkdir -p runs
 
-# Copy results with timestamp-based filename
-TIMESTAMP=$(date +%s)
-RUN_FILE="${TIMESTAMP}.json"
-cp "$RESULTS_FILE" "runs/${RUN_FILE}"
+# Publish each results file
+for RESULTS_FILE in "${RESULTS_FILES[@]}"; do
+    # Extract date label from path if it's a batch date subdir
+    PARENT_DIR=$(basename "$(dirname "$(dirname "$RESULTS_FILE")")")
+    if [[ "$PARENT_DIR" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        DATE_LABEL="$PARENT_DIR"
+        CURRENT_LABEL="${RUN_LABEL} (${DATE_LABEL})"
+    else
+        DATE_LABEL=""
+        CURRENT_LABEL="$RUN_LABEL"
+    fi
 
-# Extract metadata from results for manifest entry
-TOTAL=$(jq -r '.total // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
-PASSED=$(jq -r '.passed // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
-FAILED=$(jq -r '.failed // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
-RUN_TIMESTAMP=$(jq -r '.timestamp // empty' "$RESULTS_FILE" 2>/dev/null || date -Iseconds)
+    # Use date string as part of filename for batch runs, timestamp for single runs
+    TIMESTAMP=$(date +%s)
+    if [ -n "$DATE_LABEL" ]; then
+        RUN_FILE="${DATE_LABEL}.json"
+    else
+        RUN_FILE="${TIMESTAMP}.json"
+    fi
 
-# Create or update manifest.json
-echo "Updating manifest.json..."
-if [ -f "runs/manifest.json" ]; then
-    # Append new run to existing manifest
-    jq --arg id "run-${TIMESTAMP}" \
-       --arg date "$RUN_TIMESTAMP" \
-       --arg label "$RUN_LABEL" \
-       --argjson total "$TOTAL" \
-       --argjson passed "$PASSED" \
-       --argjson failed "$FAILED" \
-       --arg file "$RUN_FILE" \
-       '.runs += [{
-         id: $id,
-         date: $date,
-         timestamp: $date,
-         label: $label,
-         total: $total,
-         passed: $passed,
-         failed: $failed,
-         file: $file
-       }]' runs/manifest.json > runs/manifest.json.tmp
-    mv runs/manifest.json.tmp runs/manifest.json
-else
-    # Create new manifest
-    cat > runs/manifest.json << EOF
+    # Skip if this date's results already published
+    if [ -f "runs/${RUN_FILE}" ]; then
+        echo "Skipping ${RUN_FILE} (already published)"
+        continue
+    fi
+
+    cp "$RESULTS_FILE" "runs/${RUN_FILE}"
+
+    # Also copy metadata.json if it exists (for as_of_date tracking)
+    METADATA_FILE="$(dirname "$RESULTS_FILE")/metadata.json"
+    if [ -f "$METADATA_FILE" ]; then
+        cp "$METADATA_FILE" "runs/${RUN_FILE%.json}-metadata.json"
+    fi
+
+    # Extract metadata from results for manifest entry
+    TOTAL=$(jq -r '.total // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
+    PASSED=$(jq -r '.passed // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
+    FAILED=$(jq -r '.failed // 0' "$RESULTS_FILE" 2>/dev/null || echo "0")
+    RUN_TIMESTAMP=$(jq -r '.timestamp // empty' "$RESULTS_FILE" 2>/dev/null || date -Iseconds)
+
+    # Use as_of_date from metadata if available
+    if [ -f "$METADATA_FILE" ]; then
+        AS_OF=$(jq -r '.as_of_date // empty' "$METADATA_FILE" 2>/dev/null || true)
+        if [ -n "$AS_OF" ]; then
+            RUN_TIMESTAMP="${AS_OF}T23:59:59Z"
+        fi
+    fi
+
+    # Create or update manifest.json
+    echo "Adding to manifest: $RUN_FILE ($TOTAL total, $PASSED passed, $FAILED failed)"
+    if [ -f "runs/manifest.json" ]; then
+        jq --arg id "run-${DATE_LABEL:-$TIMESTAMP}" \
+           --arg date "$RUN_TIMESTAMP" \
+           --arg label "$CURRENT_LABEL" \
+           --argjson total "$TOTAL" \
+           --argjson passed "$PASSED" \
+           --argjson failed "$FAILED" \
+           --arg file "$RUN_FILE" \
+           '.runs += [{
+             id: $id,
+             date: $date,
+             timestamp: $date,
+             label: $label,
+             total: $total,
+             passed: $passed,
+             failed: $failed,
+             file: $file
+           }]' runs/manifest.json > runs/manifest.json.tmp
+        mv runs/manifest.json.tmp runs/manifest.json
+    else
+        cat > runs/manifest.json << EOF
 {
   "runs": [
     {
-      "id": "run-${TIMESTAMP}",
+      "id": "run-${DATE_LABEL:-$TIMESTAMP}",
       "date": "${RUN_TIMESTAMP}",
       "timestamp": "${RUN_TIMESTAMP}",
-      "label": "${RUN_LABEL}",
+      "label": "${CURRENT_LABEL}",
       "total": ${TOTAL},
       "passed": ${PASSED},
       "failed": ${FAILED},
@@ -122,11 +175,12 @@ else
   ]
 }
 EOF
-fi
+    fi
+done
 
 # Commit and push
 git add -A
-if git commit -m "Add results: $RUN_LABEL"; then
+if git commit -m "Add results: $RUN_LABEL (${#RESULTS_FILES[@]} runs)"; then
     echo "Pushing to gh-pages..."
     git push -u origin gh-pages
 
@@ -134,7 +188,7 @@ if git commit -m "Add results: $RUN_LABEL"; then
     ORG=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f1)
     REPO=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
     echo ""
-    echo "✅ Results published!"
+    echo "Results published!"
     echo "   Dashboard: https://${ORG}.github.io/${REPO}/"
 else
     echo "No changes to publish."
