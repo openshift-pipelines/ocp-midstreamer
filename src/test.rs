@@ -262,32 +262,32 @@ pub async fn run_tests(tags: &str, release_tests_ref: &str, output_dir: &Path, _
     let test_dir = clone_release_tests(temp_dir.path(), release_tests_ref)?;
     progress::finish_spinner(&pb, true);
 
-    // Print Go environment for diagnostics
-    if let Ok(output) = Command::new("go").args(["version"]).output() {
-        eprintln!("Go: {}", String::from_utf8_lossy(&output.stdout).trim());
-    }
-
-    // Pre-compile Go step implementations to warm build cache and catch errors before gauge.
-    // Without this, gauge's Go runner compiles from scratch and crashes opaquely on failure.
-    let pb = progress::stage_spinner("Pre-compiling Go test dependencies");
-    let go_build = Command::new("go")
-        .args(["build", "-v", "./..."])
-        .current_dir(&test_dir)
-        .output();
-    match &go_build {
-        Ok(output) if !output.status.success() => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Warning: Go pre-compilation failed:\n{}", stderr);
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.is_empty() {
-                eprintln!("Go build output:\n{}", stderr);
+    // Increase gauge's runner_connection_timeout in GAUGE_HOME config.
+    // The default 30s is too short: gauge's Go runner must download+compile all
+    // release-tests Go dependencies on first run in the container.
+    // Note: the project's env/default/default.properties is NOT used for this setting.
+    if let Ok(gauge_home) = std::env::var("GAUGE_HOME").or_else(|_| {
+        std::env::var("HOME").map(|h| format!("{}/.gauge", h))
+    }) {
+        let config_dir = Path::new(&gauge_home).join("config");
+        let config_file = config_dir.join("gauge.properties");
+        let _ = fs::create_dir_all(&config_dir);
+        if config_file.exists() {
+            if let Ok(content) = fs::read_to_string(&config_file) {
+                if !content.contains("runner_connection_timeout = 3600000") {
+                    let updated = content.replace(
+                        "runner_connection_timeout",
+                        "# runner_connection_timeout"
+                    ) + "\nrunner_connection_timeout = 3600000\n";
+                    let _ = fs::write(&config_file, updated);
+                    eprintln!("Set runner_connection_timeout = 3600000 in {}", config_file.display());
+                }
             }
+        } else {
+            let _ = fs::write(&config_file, "runner_connection_timeout = 3600000\n");
+            eprintln!("Created {} with runner_connection_timeout = 3600000", config_file.display());
         }
-        Err(e) => eprintln!("Warning: Go pre-compilation skipped: {}", e),
     }
-    progress::finish_spinner(&pb, true);
 
     // Stage 2.5: Set up profiler if requested
     let mut profiling_ctx: Option<(kube::Client, profile::ClusterCapacity, profile::ResourceSnapshot, Arc<profile::MetricsCollector>)> = None;
