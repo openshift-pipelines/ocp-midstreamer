@@ -61,24 +61,16 @@ pub fn run_deploy(
     // Step 5: Display mapping table
     mapping::display_mapping_table(&mappings);
 
-    // Step 6: Find operator deployment and CSV
+    // Step 6: Find operator deployment
     let pb = progress::stage_spinner("Finding operator controller deployment");
     let (namespace, deployment_name) = operator::find_operator_deployment(&rt, &client)?;
     progress::finish_spinner(&pb, true);
 
-    let pb = progress::stage_spinner("Finding operator CSV (OLM manages deployments via CSV)");
-    let csv_name = operator::find_operator_csv(&rt, &client, &namespace)?;
+    // Step 7: Patch Deployment directly (OLM does NOT revert deployment patches per issue #1853)
+    let pb = progress::stage_spinner("Patching operator Deployment with IMAGE_ env vars");
+    operator::patch_operator_deployment_env(&rt, &client, &namespace, &deployment_name, &mappings)?;
     progress::finish_spinner(&pb, true);
-
-    eprintln!(
-        "  Patching CSV {} (deployment: {}/{}) ...",
-        csv_name, namespace, deployment_name
-    );
-
-    // Step 7: Patch CSV (not deployment — OLM reverts direct deployment patches)
-    let pb = progress::stage_spinner("Patching CSV with IMAGE_ env vars");
-    operator::patch_operator_images(&rt, &client, &namespace, &csv_name, &deployment_name, &mappings)?;
-    progress::finish_spinner(&pb, true);
+    eprintln!("  Patched {}/{} with {} IMAGE_ env vars", namespace, deployment_name, mappings.len());
 
     // Step 8: Ensure image-pull RBAC for upstream namespace
     let image_namespace = internal_registry
