@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use k8s_openapi::api::apps::v1::Deployment;
-use kube::api::{Api, ApiResource, DynamicObject, ListParams};
+use kube::api::{Api, ApiResource, DynamicObject, ListParams, Patch, PatchParams};
 use kube::Client;
 use serde_json::json;
 use tokio::runtime::Runtime;
@@ -52,6 +52,10 @@ const OPERATOR_LABEL_SELECTORS: &[&str] = &[
 
 /// Find the operator controller deployment by checking known namespaces, names, and label selectors.
 /// Returns (namespace, deployment_name).
+///
+/// This is the primary function used for deploying upstream images: the returned deployment
+/// is patched directly via `patch_operator_deployment_env()` (direct Deployment patching,
+/// not CSV patching -- OLM does NOT revert direct deployment modifications per issue #1853).
 pub fn find_operator_deployment(
     rt: &Runtime,
     client: &Client,
@@ -90,6 +94,89 @@ pub fn find_operator_deployment(
         OPERATOR_DEPLOYMENT_NAMES.join(", "),
         OPERATOR_LABEL_SELECTORS.join(", ")
     )
+}
+
+/// Patch the operator Deployment's container env vars directly.
+///
+/// This bypasses CSV patching entirely. OLM does NOT revert direct deployment
+/// modifications per OLM issue #1853, so patching the Deployment directly is
+/// both safe and more reliable than patching the CSV (which was broken with
+/// OpenShift Pipelines v1.21.0 -- CSV env var changes were not propagated to
+/// the Deployment).
+///
+/// The function finds the container named "openshift-pipelines-operator-lifecycle"
+/// in the Deployment spec, merges the IMAGE_ env vars, and replaces the Deployment.
+pub fn patch_operator_deployment_env(
+    rt: &Runtime,
+    client: &Client,
+    namespace: &str,
+    deployment_name: &str,
+    mappings: &[(String, String)],
+) -> anyhow::Result<()> {
+    let api: Api<Deployment> = Api::namespaced(client.clone(), namespace);
+
+    // Get the current deployment
+    let mut dep = rt
+        .block_on(api.get(deployment_name))
+        .with_context(|| format!("Failed to get Deployment {}/{}", namespace, deployment_name))?;
+
+    // Find the container named "openshift-pipelines-operator-lifecycle"
+    let containers = dep
+        .spec
+        .as_mut()
+        .and_then(|s| s.template.spec.as_mut())
+        .map(|s| &mut s.containers)
+        .context("Deployment has no containers in spec.template.spec.containers")?;
+
+    let container_index = containers
+        .iter()
+        .position(|c| c.name == "openshift-pipelines-operator-lifecycle")
+        .context("Container 'openshift-pipelines-operator-lifecycle' not found in Deployment")?;
+
+    let container = &mut containers[container_index];
+
+    // Read existing env vars from the container
+    let existing_envs = container.env.take().unwrap_or_default();
+
+    // Build merged env list: update matching keys (set value, clear valueFrom), keep the rest
+    let mut new_envs: Vec<k8s_openapi::api::core::v1::EnvVar> = existing_envs
+        .into_iter()
+        .map(|mut env| {
+            if let Some((_, new_val)) = mappings.iter().find(|(k, _)| k == &env.name) {
+                env.value = Some(new_val.clone());
+                env.value_from = None;
+            }
+            env
+        })
+        .collect();
+
+    // Add any new keys not already present
+    let existing_names: Vec<String> = new_envs.iter().map(|e| e.name.clone()).collect();
+    for (key, value) in mappings {
+        if !existing_names.iter().any(|n| n == key) {
+            new_envs.push(k8s_openapi::api::core::v1::EnvVar {
+                name: key.clone(),
+                value: Some(value.clone()),
+                value_from: None,
+            });
+        }
+    }
+
+    container.env = Some(new_envs);
+
+    // Replace the deployment with updated env vars
+    // OLM does NOT revert direct deployment modifications (OLM issue #1853),
+    // so this change persists even though OLM manages the deployment via CSV.
+    let pp = kube::api::PostParams::default();
+    rt.block_on(api.replace(deployment_name, &pp, &dep))
+        .with_context(|| {
+            format!(
+                "Failed to update Deployment {}/{} with IMAGE_ env vars",
+                namespace, deployment_name
+            )
+        })?;
+
+    Ok(())
 }
 
 /// Find the ClusterServiceVersion for OpenShift Pipelines operator.
