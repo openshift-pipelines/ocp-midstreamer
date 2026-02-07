@@ -22,9 +22,14 @@ on:
         default: 'master'
         type: string
       cli_flags:
-        description: 'Extra CLI flags (e.g. --dry-run, --profile)'
+        description: 'Extra CLI flags (e.g. --as-of 2026-01-15, --profile)'
         required: false
         default: ''
+        type: string
+      image_tag:
+        description: 'Container image tag (default: latest)'
+        required: false
+        default: 'latest'
         type: string
 
 permissions:
@@ -33,21 +38,13 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Mask credentials
         run: |
           CLUSTER_PASSWORD=$(jq -r '.inputs.cluster_password' "$GITHUB_EVENT_PATH")
           echo "::add-mask::$CLUSTER_PASSWORD"
           echo "CLUSTER_PASSWORD=$CLUSTER_PASSWORD" >> "$GITHUB_ENV"
-
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
 
       - name: Install oc
         uses: redhat-actions/openshift-tools-installer@v1
@@ -55,189 +52,164 @@ jobs:
           source: mirror
           oc: '4'
 
-      - name: Install ko
-        uses: ko-build/setup-ko@v0.9
-
-      - name: Install Gauge
-        run: |
-          curl -SsL https://downloads.gauge.org/stable | sh
-          gauge install go
-          gauge install xml-report
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build CLI
-        run: cargo build --release
-
       - name: Login to OCP cluster
+        env:
+          CLUSTER_API_URL: ${{ inputs.cluster_api_url }}
         run: |
           set -euo pipefail
-          oc login "${{ inputs.cluster_api_url }}" \
+          oc login "$CLUSTER_API_URL" \
             -u cluster-admin \
             -p "$CLUSTER_PASSWORD" \
             --insecure-skip-tls-verify
           echo "Logged in as: $(oc whoami)"
           echo "Server: $(oc whoami --show-server)"
 
-      - name: Auto-setup cluster prerequisites
-        run: ./target/release/streamstress check --fix
-
-      - name: Login to OCP registry
-        run: |
-          set -euo pipefail
-          REGISTRY_HOST=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
-          TOKEN=$(oc whoami -t)
-          oc registry login --to="$HOME/.docker/config.json"
-          echo "{\"auths\":{\"$REGISTRY_HOST\":{\"auth\":\"$(echo -n "unused:$TOKEN" | base64)\"}}}" | \
-            jq -s '.[0] * .[1]' "$HOME/.docker/config.json" - > "$HOME/.docker/config.json.tmp" && \
-            mv "$HOME/.docker/config.json.tmp" "$HOME/.docker/config.json"
-          echo "Registry: $REGISTRY_HOST (credentials configured for both internal and external)"
-
-      - name: Check for existing Job
-        id: check-job
+      - name: Setup cluster prerequisites
         run: |
           set -euo pipefail
           NS="openshift-pipelines"
-          # Find most recent streamstress Job
-          JOB_NAME=$(oc get jobs -n "$NS" -l app=streamstress \
-            --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)
 
-          if [ -z "$JOB_NAME" ]; then
-            echo "status=none" >> "$GITHUB_OUTPUT"
-            echo "No existing streamstress Jobs found."
-            exit 0
-          fi
+          # Patch imageregistry for default route
+          oc patch configs.imageregistry.operator.openshift.io/cluster \
+            --type merge -p '{"spec":{"defaultRoute":true}}' 2>/dev/null || true
 
-          # Check Job status
-          SUCCEEDED=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "0")
-          FAILED=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.failed}' 2>/dev/null || echo "0")
-          ACTIVE=$(oc get job "$JOB_NAME" -n "$NS" -o jsonpath='{.status.active}' 2>/dev/null || echo "0")
+          # Ensure namespace exists
+          oc get namespace "$NS" 2>/dev/null || oc create namespace "$NS"
 
-          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+          # Create ServiceAccount
+          oc apply -f - <<EOF
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: streamstress-sa
+            namespace: $NS
+          EOF
 
-          if [ "$ACTIVE" = "1" ]; then
-            echo "status=running" >> "$GITHUB_OUTPUT"
-            echo "Job $JOB_NAME is still running."
-          elif [ "$SUCCEEDED" = "1" ]; then
-            echo "status=succeeded" >> "$GITHUB_OUTPUT"
-            echo "Job $JOB_NAME has completed successfully."
-          elif [ "$FAILED" = "1" ]; then
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-            echo "Job $JOB_NAME has failed."
-          else
-            echo "status=none" >> "$GITHUB_OUTPUT"
-            echo "Job $JOB_NAME in unknown state, treating as none."
-          fi
+          # Create ClusterRoleBinding
+          oc apply -f - <<EOF
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: streamstress-crb
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+            - kind: ServiceAccount
+              name: streamstress-sa
+              namespace: $NS
+          EOF
 
-      - name: Copy results from completed Job
-        if: steps.check-job.outputs.status == 'succeeded'
-        run: |
-          set -euo pipefail
-          NS="openshift-pipelines"
-          JOB_NAME="${{ steps.check-job.outputs.job_name }}"
-          POD_NAME=$(oc get pods -n "$NS" -l "job-name=$JOB_NAME" -o jsonpath='{.items[0].metadata.name}')
-          echo "Copying results from pod $POD_NAME..."
-          mkdir -p ./test-output
-          oc cp "$NS/$POD_NAME:/test-output" ./test-output/ 2>/dev/null || true
-          echo "Results copied. Contents:"
-          find ./test-output -type f | head -20
+          echo "Cluster prerequisites configured."
 
-      - name: Run streamstress
-        if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
+      - name: Create streamstress Job
         env:
-          # Publish env vars - passed to in-cluster Job for direct gh-pages push
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RUN_LABEL: "CI run: ${{ inputs.components }}"
-          OUTPUT_DIR: /test-output
-          # CLI inputs
+          IMAGE_TAG: ${{ inputs.image_tag }}
           COMPONENTS: ${{ inputs.components }}
           RELEASE_TESTS_REF: ${{ inputs.release_tests_ref }}
           CLI_FLAGS: ${{ inputs.cli_flags }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ./target/release/streamstress run \
-            --components "$COMPONENTS" \
-            --release-tests-ref "$RELEASE_TESTS_REF" \
-            $CLI_FLAGS
+          NS="openshift-pipelines"
+          JOB_NAME="streamstress-$(date +%s)"
+          IMAGE="ghcr.io/openshift-pipelines/streamstress:${IMAGE_TAG}"
+          RUN_LABEL="CI run: ${COMPONENTS}"
 
-      - name: Write summary (Job running)
-        if: steps.check-job.outputs.status == 'running'
-        run: |
-          JOB_NAME="${{ steps.check-job.outputs.job_name }}"
-          echo "## ⏳ Streamstress Job In Progress" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Job:** \`$JOB_NAME\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Namespace:** \`openshift-pipelines\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### View Logs" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "oc logs -f job/$JOB_NAME -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
-          echo "Re-run this workflow after the Job completes to copy results and publish the dashboard." >> "$GITHUB_STEP_SUMMARY"
+          # Build CLI args for the Job container
+          # The entrypoint.sh wrapper will invoke streamstress with these args,
+          # then auto-publish results to gh-pages if GITHUB_TOKEN is set.
+          CLI_ARGS="run --components ${COMPONENTS} --release-tests-ref ${RELEASE_TESTS_REF} --skip-build --output-dir /test-output"
+          if [ -n "$CLI_FLAGS" ]; then
+            CLI_ARGS="${CLI_ARGS} ${CLI_FLAGS}"
+          fi
 
-      - name: Write summary (Job just launched)
-        if: steps.check-job.outputs.status == 'none' || steps.check-job.outputs.status == 'failed'
+          # Convert CLI_ARGS string to JSON array for Job spec
+          ARGS_JSON="["
+          first=true
+          for arg in $CLI_ARGS; do
+            if [ "$first" = true ]; then
+              ARGS_JSON="${ARGS_JSON}\"${arg}\""
+              first=false
+            else
+              ARGS_JSON="${ARGS_JSON},\"${arg}\""
+            fi
+          done
+          ARGS_JSON="${ARGS_JSON}]"
+
+          oc apply -f - <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${JOB_NAME}
+            namespace: ${NS}
+            labels:
+              app: streamstress
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 10800
+            template:
+              metadata:
+                labels:
+                  app: streamstress
+                  job-name: ${JOB_NAME}
+              spec:
+                serviceAccountName: streamstress-sa
+                restartPolicy: Never
+                containers:
+                  - name: streamstress
+                    image: ${IMAGE}
+                    imagePullPolicy: Always
+                    args: ${ARGS_JSON}
+                    env:
+                      - name: JOB_NAME
+                        value: "${JOB_NAME}"
+                      - name: GITHUB_TOKEN
+                        value: "${GITHUB_TOKEN}"
+                      - name: GITHUB_REPOSITORY
+                        value: "${GITHUB_REPOSITORY}"
+                      - name: RUN_LABEL
+                        value: "${RUN_LABEL}"
+                      - name: OUTPUT_DIR
+                        value: "/test-output"
+          EOF
+
+          echo "JOB_NAME=$JOB_NAME" >> "$GITHUB_ENV"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+          # Verify the Job was created and pod is starting
+          echo "Waiting for Job pod to appear..."
+          for i in $(seq 1 30); do
+            POD=$(oc get pods -n "$NS" -l "job-name=$JOB_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$POD" ]; then
+              PHASE=$(oc get pod "$POD" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+              echo "Pod: $POD (phase: $PHASE)"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Write step summary
         env:
           CLUSTER_URL: ${{ inputs.cluster_api_url }}
           COMPONENTS: ${{ inputs.components }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
-          echo "## 🚀 Streamstress Job Launched" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Streamstress Job Launched" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Job:** \`$JOB_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image:** \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
           echo "**Components:** $COMPONENTS" >> "$GITHUB_STEP_SUMMARY"
           echo "**Cluster:** $CLUSTER_URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Auto-publish:** ✅ Enabled (callback configured)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### What Happens Next" >> "$GITHUB_STEP_SUMMARY"
           echo "1. Tests run in-cluster (~2.5 hrs)" >> "$GITHUB_STEP_SUMMARY"
-          echo "2. When complete, Job triggers **publish.yml** workflow automatically" >> "$GITHUB_STEP_SUMMARY"
-          echo "3. Results published to [Dashboard]($PAGES_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. When complete, Job auto-publishes results to gh-pages" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. Results appear on [Dashboard]($PAGES_URL)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### View Logs" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "streamstress logs" >> "$GITHUB_STEP_SUMMARY"
-          echo "# or" >> "$GITHUB_STEP_SUMMARY"
-          echo "oc logs -f \$(oc get pods -n openshift-pipelines -l app=streamstress --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Configure git for publish
-        if: steps.check-job.outputs.status == 'succeeded'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to dashboard
-        if: steps.check-job.outputs.status == 'succeeded'
-        run: |
-          set -euo pipefail
-          ./target/release/streamstress publish \
-            --label "CI run: ${{ inputs.components }}"
-
-      - name: Write summary (results published)
-        if: steps.check-job.outputs.status == 'succeeded'
-        run: |
-          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
-          echo "## ✅ Streamstress Results Published" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Components:** ${{ inputs.components }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Cluster:** ${{ inputs.cluster_api_url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "[View Dashboard]($PAGES_URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "oc logs -f job/$JOB_NAME -n openshift-pipelines" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
