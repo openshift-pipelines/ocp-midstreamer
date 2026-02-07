@@ -23,6 +23,13 @@ if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
     exit 0
 fi
 
+# Verify jq is available (prevents silent 0/0/0 data when missing)
+if ! command -v jq &>/dev/null; then
+    echo "ERROR: jq is required for publishing but not found in container image"
+    echo "Rebuild the container image with jq installed (see Dockerfile.cli)"
+    exit 1
+fi
+
 OUTPUT_DIR="${OUTPUT_DIR:-/test-output}"
 RUN_LABEL="${RUN_LABEL:-CI run}"
 
