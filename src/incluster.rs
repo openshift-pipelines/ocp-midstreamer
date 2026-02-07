@@ -5,9 +5,17 @@ use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
 use kube::api::{Api, ListParams, LogParams, PostParams};
 use futures::{AsyncBufReadExt, TryStreamExt};
 
+/// Base image path for ghcr.io-hosted pre-built images.
+pub const GHCR_IMAGE_BASE: &str = "ghcr.io/openshift-pipelines/streamstress";
+
 /// Returns the CLI version tag for image caching.
 pub fn cli_image_tag() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Returns the ghcr.io image reference for the current CLI version.
+pub fn ghcr_image_ref() -> String {
+    format!("{}:v{}", GHCR_IMAGE_BASE, cli_image_tag())
 }
 
 /// Returns the full image reference for the CLI container.
@@ -214,11 +222,15 @@ pub async fn create_job(
 /// Pods pull from this address (no auth needed with proper RBAC).
 const INTERNAL_REGISTRY: &str = "image-registry.openshift-image-registry.svc:5000";
 
-pub fn run_incluster(registry: &str, namespace: &str, cli_args: &[String]) -> Result<()> {
-    // Push to external route, but Job pulls via internal service address
-    build_and_push_cli_image(registry)?;
-
-    let image_ref = cli_image_ref(INTERNAL_REGISTRY);
+pub fn run_incluster(registry: &str, namespace: &str, cli_args: &[String], image_override: Option<&str>) -> Result<()> {
+    let image_ref = if let Some(img) = image_override {
+        eprintln!("Using pre-built image: {}", img);
+        img.to_string()
+    } else {
+        // Push to external route, but Job pulls via internal service address
+        build_and_push_cli_image(registry)?;
+        cli_image_ref(INTERNAL_REGISTRY)
+    };
 
     // Append --skip-build so the in-cluster copy skips clone/build
     let mut job_args = cli_args.to_vec();

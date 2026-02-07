@@ -146,6 +146,7 @@ async fn main() {
             registry,
             skip_build,
             profile,
+            image,
             perf,
             perf_scenario,
             perf_ref,
@@ -227,7 +228,7 @@ async fn main() {
             // Normal mode: build locally, then create in-cluster Job for deploy+test
             // Note: perf flags are NOT passed to in-cluster Job yet (would need incluster module changes)
             // For now, perf tests run only in skip_build or is_incluster paths
-            let exit_code = run_multi(specs, dry_run, json, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, as_of.as_deref()).await;
+            let exit_code = run_multi(specs, dry_run, json, &tags, &release_tests_ref, &output_dir, registry.as_deref(), cli.verbose, as_of.as_deref(), image.as_deref()).await;
             std::process::exit(exit_code);
         }
         Commands::Results { output_dir } => {
@@ -732,6 +733,7 @@ async fn run_multi(
     registry_override: Option<&str>,
     _verbose: bool,
     as_of: Option<&str>,
+    image_override: Option<&str>,
 ) -> i32 {
     let cfg = match config::load_config(&config::default_config_path()) {
         Ok(c) => c,
@@ -744,6 +746,46 @@ async fn run_multi(
     // Dry-run: just print the plan
     if dry_run {
         return print_dry_run_plan(&specs, &cfg, json_output, as_of);
+    }
+
+    // When --image is provided, skip build phase entirely and use pre-built image
+    if let Some(ref img) = image_override {
+        eprintln!("\n=== Using pre-built image: {} ===", img);
+        eprintln!("Skipping registry setup and component builds.");
+
+        // Build CLI args for the in-cluster Job
+        let spec_str = specs.iter().map(|s| {
+            match &s.git_ref {
+                Some(r) => format!("{}:{}", s.name, r),
+                None => s.name.clone(),
+            }
+        }).collect::<Vec<_>>().join(",");
+        let mut cli_args = vec![
+            "run".to_string(),
+            "--components".to_string(), spec_str,
+            "--tags".to_string(), tags.to_string(),
+            "--release-tests-ref".to_string(), release_tests_ref.to_string(),
+            "--output-dir".to_string(), output_dir.to_string(),
+        ];
+        if let Some(reg) = registry_override {
+            cli_args.push("--registry".to_string());
+            cli_args.push(reg.to_string());
+        }
+        if let Some(date) = as_of {
+            cli_args.push("--as-of".to_string());
+            cli_args.push(date.to_string());
+        }
+
+        let img_clone = img.to_string();
+        // Registry route not needed when using pre-built image, pass empty string
+        let result = tokio::task::spawn_blocking(move || {
+            incluster::run_incluster("", "openshift-pipelines", &cli_args, Some(&img_clone))
+        }).await;
+        return match result {
+            Ok(Ok(())) => 0,
+            Ok(Err(e)) => { eprintln!("Error creating in-cluster Job: {e:#}"); 2 }
+            Err(e) => { eprintln!("Error: in-cluster task panicked: {e}"); 2 }
+        };
     }
 
     // Registry setup
@@ -819,7 +861,7 @@ async fn run_multi(
 
     let registry_route_clone = registry_route.clone();
     let result = tokio::task::spawn_blocking(move || {
-        incluster::run_incluster(&registry_route_clone, "openshift-pipelines", &cli_args)
+        incluster::run_incluster(&registry_route_clone, "openshift-pipelines", &cli_args, None)
     }).await;
     match result {
         Ok(Ok(())) => 0,

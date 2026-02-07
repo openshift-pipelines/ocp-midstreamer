@@ -124,6 +124,12 @@ pub enum Commands {
         #[arg(long)]
         profile: bool,
 
+        /// Use a pre-built container image for the in-cluster Job.
+        /// Skips building and pushing Dockerfile.cli.
+        /// Example: ghcr.io/openshift-pipelines/streamstress:v0.1.5
+        #[arg(long)]
+        image: Option<String>,
+
         /// Run performance tests from openshift-pipelines/performance repo.
         /// Can be combined with functional tests or run standalone.
         #[arg(long)]
